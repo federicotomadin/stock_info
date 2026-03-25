@@ -1,0 +1,175 @@
+.page {
+  width: min(1100px, 100%);
+  margin: 0 auto;
+  padding: 2rem 1rem 3rem;
+  box-sizing: border-box;
+}
+
+.hero {
+  margin-bottom: 1.5rem;
+}
+
+.eyebrow {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.subtitle {
+  margin: 0;
+  color: #475569;
+}
+
+.panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.8rem;
+  background: #ffffff;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.controls label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+input {
+  flex: 1;
+  min-width: 220px;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.6rem;
+  padding: 0.65rem 0.75rem;
+  font-size: 1rem;
+}
+
+button {
+  border: 1px solid #cbd5e1;
+  background: #0f172a;
+  color: #ffffff;
+  border-radius: 0.6rem;
+  padding: 0.65rem 0.8rem;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.sort {
+  margin-top: 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.sort span {
+  font-weight: 600;
+  margin-right: 0.2rem;
+}
+
+.sort button {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.sort button.active {
+  background: #0f172a;
+  color: #ffffff;
+}
+
+.status {
+  margin: 0.75rem 0 0;
+  font-size: 0.95rem;
+}
+
+.status.error {
+  color: #b91c1c;
+}
+
+.status.warning {
+  color: #a16207;
+}
+
+.table-panel {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+th,
+td {
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  padding: 0.65rem 0.35rem;
+  vertical-align: middle;
+}
+
+th {
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  color: #334155;
+}
+
+td {
+  color: #0f172a;
+}
+
+.col-name {
+  width: 38%;
+}
+
+.col-exchange {
+  width: 9%;
+  white-space: nowrap;
+}
+
+.col-price {
+  width: 8%;
+  white-space: nowrap;
+}
+
+.col-metric {
+  width: 8%;
+  white-space: nowrap;
+}
+
+.col-date {
+  width: 12%;
+  white-space: nowrap;
+}
+
+.cell-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.positive {
+  color: #166534;
+  font-weight: 600;
+}
+
+.negative {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.neutral {
+  color: #0f172a;
+}
