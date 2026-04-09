@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import cors from 'cors'
 import express from 'express'
 import http from 'node:http'
@@ -8,7 +9,20 @@ const MAX_SYMBOLS = 120
 const SYMBOL_CONCURRENCY = 4
 const FETCH_RETRIES = 2
 const CACHE_TTL_MS = 5 * 60 * 1000
+const PROFILE_CACHE_TTL_MS = 12 * 60 * 60 * 1000
+const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY?.trim()
+/** Curated fundamentals when public APIs resolve the wrong Wikipedia/Wikidata entity. */
+const PROFILE_SYMBOL_OVERRIDES = {
+  AXTI: {
+    sector: 'Technology',
+    industry: 'Semiconductor materials & compound substrates',
+    businessSummary:
+      'AXT, Inc. designs and manufactures compound semiconductor substrates (GaAs, InP, Ge) and related specialty materials — a niche but strategic link in the global chip and photonics supply chain.',
+    dataSource: 'curated',
+  },
+}
 const symbolCache = new Map()
+const profileCache = new Map()
 const UNIVERSE_TTL_MS = 24 * 60 * 60 * 1000
 let marketUniverseCache = { data: null, savedAt: 0 }
 let stooqDisabledUntil = 0
@@ -52,6 +66,270 @@ function findCloseAtOrBefore(closes, index) {
     }
   }
   return null
+}
+
+function cleanBusinessSummary(summary = '') {
+  return summary.replace(/\s+/g, ' ').trim()
+}
+
+/** Rejects Wikipedia summaries that are clearly not a listed company (POI, geography, etc.). */
+function looksLikeNonCompanyWikipediaDescription(description = '') {
+  const text = description.trim()
+  if (!text) return false
+  const lower = text.toLowerCase()
+  if (
+    /^(airport|train station|railway station|station|bridge|dam|river|mountain|building|prefecture|district|university|college|school|hospital|park|museum|highway|road|tunnel|lake|island|town|village|city)\b/i.test(
+      text
+    )
+  ) {
+    return true
+  }
+  if (/\bairport in\b/.test(lower)) return true
+  if (/\bstation in\b/.test(lower) && !/\bcompany\b/.test(lower)) return true
+  return false
+}
+
+function applyProfileOverride(symbol, value) {
+  const key = String(symbol ?? '').toUpperCase()
+  const override = PROFILE_SYMBOL_OVERRIDES[key]
+  if (!override || !value) {
+    return value
+  }
+  return {
+    ...value,
+    sector: override.sector ?? value.sector,
+    industry: override.industry ?? value.industry,
+    businessSummary: override.businessSummary ?? value.businessSummary,
+    dataSource: override.dataSource ?? value.dataSource,
+  }
+}
+
+function extractFoundedYear(text = '') {
+  const foundedMatch = text.match(
+    /\b(?:founded|incorporated|established)\s+(?:in\s+)?((?:18|19|20)\d{2})\b/i
+  )
+  if (foundedMatch) {
+    return Number(foundedMatch[1])
+  }
+
+  return null
+}
+
+function cleanNameForWiki(name = '') {
+  return name
+    .replace(/\s*-\s*.*$/, '')
+    .replace(
+      /\b(inc|inc\.|corp|corporation|co|co\.|holdings|group|limited|ltd|plc|sa|se|nv|ag|company)\b/gi,
+      ''
+    )
+    .replace(/[.,]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function parseWikidataYear(timeValue) {
+  if (typeof timeValue !== 'string') {
+    return null
+  }
+
+  const matched = timeValue.match(/([+-]?\d{4})-/)
+  if (!matched) {
+    return null
+  }
+
+  return Math.abs(Number(matched[1]))
+}
+
+function inferSectorFromIndustry(industry = '') {
+  const text = industry.toUpperCase()
+
+  if (text.includes('SEMICONDUCTOR') || text.includes('SOFTWARE') || text.includes('TECH')) {
+    return 'Technology'
+  }
+  if (
+    text.includes('BANK') ||
+    text.includes('FINANC') ||
+    text.includes('PAYMENT') ||
+    text.includes('INSURANCE')
+  ) {
+    return 'Financial Services'
+  }
+  if (text.includes('PHARMA') || text.includes('BIOTECH') || text.includes('HEALTH')) {
+    return 'Healthcare'
+  }
+  if (text.includes('ENERGY') || text.includes('OIL') || text.includes('GAS')) {
+    return 'Energy'
+  }
+  if (
+    text.includes('INDUSTR') ||
+    text.includes('ALUMIN') ||
+    text.includes('MANUFACTUR') ||
+    text.includes('AEROSPACE')
+  ) {
+    return 'Industrials'
+  }
+  if (
+    text.includes('RETAIL') ||
+    text.includes('E-COMMERCE') ||
+    text.includes('CONSUMER')
+  ) {
+    return 'Consumer'
+  }
+
+  return 'Unknown'
+}
+
+function extractTickerClaims(entity) {
+  const claims = entity?.claims?.P249 ?? []
+  return claims
+    .map((claim) => claim?.mainsnak?.datavalue?.value)
+    .filter(Boolean)
+    .map((value) => String(value).toUpperCase())
+}
+
+function extractIndustryEntityIds(entity) {
+  const claims = entity?.claims?.P452 ?? []
+  return claims
+    .map((claim) => claim?.mainsnak?.datavalue?.value?.id)
+    .filter(Boolean)
+}
+
+function extractInceptionYear(entity) {
+  const claim = entity?.claims?.P571?.[0]
+  const time = claim?.mainsnak?.datavalue?.value?.time
+  return parseWikidataYear(time)
+}
+
+function extractEnWikipediaTitle(entity) {
+  return entity?.sitelinks?.enwiki?.title ?? null
+}
+
+async function fetchWikipediaSummaryByTitle(title) {
+  const endpoint =
+    'https://en.wikipedia.org/api/rest_v1/page/summary/' +
+    encodeURIComponent(title.replaceAll(' ', '_'))
+  const response = await fetchWithTimeout(
+    endpoint,
+    {
+      headers: {
+        'User-Agent': 'stock-info-local-app/1.0',
+        Accept: 'application/json',
+      },
+    },
+    8000
+  )
+
+  if (!response.ok) {
+    throw new Error(`Wikipedia HTTP ${response.status}`)
+  }
+
+  const payload = await response.json()
+  return {
+    description: cleanBusinessSummary(payload.description ?? ''),
+    extract: cleanBusinessSummary(payload.extract ?? ''),
+  }
+}
+
+async function fetchWikidataEntityById(entityId) {
+  const endpoint = `https://www.wikidata.org/wiki/Special:EntityData/${entityId}.json`
+  const response = await fetchWithTimeout(
+    endpoint,
+    {
+      headers: {
+        'User-Agent': 'stock-info-local-app/1.0',
+        Accept: 'application/json',
+      },
+    },
+    10000
+  )
+
+  if (!response.ok) {
+    throw new Error(`Wikidata entity HTTP ${response.status}`)
+  }
+
+  const payload = await response.json()
+  return payload?.entities?.[entityId] ?? null
+}
+
+async function fetchWikidataLabelsByIds(ids) {
+  if (!ids.length) {
+    return {}
+  }
+
+  const endpoint =
+    'https://www.wikidata.org/w/api.php?' +
+    new URLSearchParams({
+      action: 'wbgetentities',
+      format: 'json',
+      ids: ids.join('|'),
+      languages: 'en',
+      props: 'labels',
+      origin: '*',
+    }).toString()
+
+  const response = await fetchWithTimeout(
+    endpoint,
+    {
+      headers: {
+        'User-Agent': 'stock-info-local-app/1.0',
+        Accept: 'application/json',
+      },
+    },
+    10000
+  )
+
+  if (!response.ok) {
+    throw new Error(`Wikidata labels HTTP ${response.status}`)
+  }
+
+  const payload = await response.json()
+  const result = {}
+  for (const id of ids) {
+    result[id] = payload?.entities?.[id]?.labels?.en?.value ?? null
+  }
+  return result
+}
+
+function buildWikiCandidates(companyName = '') {
+  const raw = companyName.replace(/\s*-\s*.*$/, '').trim()
+  const cleaned = cleanNameForWiki(raw)
+
+  return Array.from(
+    new Set(
+      [raw, `${raw} (company)`, cleaned, `${cleaned} (company)`].filter((value) =>
+        value?.trim()
+      )
+    )
+  )
+}
+
+function inferSectorIndustry(text = '') {
+  const source = text.toUpperCase()
+  const has = (tokens) => tokens.some((token) => source.includes(token))
+
+  if (has(['SEMICONDUCTOR', 'CHIP', 'MICROPROCESSOR'])) {
+    return { sector: 'Technology', industry: 'Semiconductors' }
+  }
+  if (has(['BANK', 'FINTECH', 'PAYMENT', 'INSURANCE', 'FINANCIAL'])) {
+    return { sector: 'Financial Services', industry: 'Financials / Fintech' }
+  }
+  if (has(['PHARM', 'BIOTECH', 'HEALTHCARE', 'MEDICAL'])) {
+    return { sector: 'Healthcare', industry: 'Biotech / Healthcare' }
+  }
+  if (has(['OIL', 'GAS', 'ENERGY', 'PETROLEUM', 'RENEWABLE'])) {
+    return { sector: 'Energy', industry: 'Energy' }
+  }
+  if (has(['SOFTWARE', 'CLOUD', 'INTERNET', 'PLATFORM', 'SAAS'])) {
+    return { sector: 'Technology', industry: 'Software / Internet' }
+  }
+  if (has(['AEROSPACE', 'INDUSTRIAL', 'ALUMINUM', 'STEEL', 'MACHINERY'])) {
+    return { sector: 'Industrials', industry: 'Industrial Manufacturing' }
+  }
+  if (has(['RETAIL', 'CONSUMER', 'E-COMMERCE', 'FOOD', 'BEVERAGE'])) {
+    return { sector: 'Consumer', industry: 'Consumer Goods / Services' }
+  }
+
+  return { sector: null, industry: null }
 }
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
@@ -214,6 +492,369 @@ async function fetchSymbolDataFromYahoo(symbol) {
   )
 }
 
+async function fetchCompanyProfileFromYahoo(symbol) {
+  const yahooTicker = toYahooTicker(symbol)
+  const hosts = [
+    'https://query1.finance.yahoo.com',
+    'https://query2.finance.yahoo.com',
+  ]
+
+  let lastError = null
+
+  for (const host of hosts) {
+    try {
+      const value = await withRetries(async () => {
+        const endpoint =
+          `${host}/v10/finance/quoteSummary/${encodeURIComponent(yahooTicker)}` +
+          '?modules=assetProfile,price'
+        const response = await fetchWithTimeout(
+          endpoint,
+          {
+            headers: {
+              'User-Agent': 'stock-info-local-app/1.0',
+              Accept: 'application/json',
+            },
+          },
+          12000
+        )
+
+        if (!response.ok) {
+          throw new Error(`Yahoo HTTP ${response.status}`)
+        }
+
+        const payload = await response.json()
+        const profileError = payload?.quoteSummary?.error?.description
+        if (profileError) {
+          throw new Error(profileError)
+        }
+
+        const result = payload?.quoteSummary?.result?.[0]
+        const assetProfile = result?.assetProfile ?? {}
+        const price = result?.price ?? {}
+        const summary = cleanBusinessSummary(assetProfile.longBusinessSummary ?? '')
+        const foundedYear = extractFoundedYear(summary)
+        const listedEpoch =
+          Number(price.firstTradeDateEpochUtc) ||
+          Number(price.firstTradeDateMilliseconds) / 1000
+        const listedYear = Number.isFinite(listedEpoch)
+          ? new Date(listedEpoch * 1000).getUTCFullYear()
+          : null
+        const startYear = foundedYear ?? listedYear
+        const currentYear = new Date().getUTCFullYear()
+        const yearsOperating =
+          Number.isFinite(startYear) && startYear > 1800
+            ? Math.max(1, currentYear - startYear)
+            : null
+
+        return {
+          symbol,
+          sector: assetProfile.sector ?? null,
+          industry: assetProfile.industry ?? null,
+          businessSummary: summary || null,
+          foundedYear,
+          listedYear,
+          yearsOperating,
+          yearsSource: foundedYear ? 'founded' : listedYear ? 'listed' : null,
+          dataSource: 'yahoo',
+        }
+      })
+
+      return value
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  throw new Error(
+    `Profile fetch failed for ${symbol}: ${lastError?.message ?? 'unknown error'}`
+  )
+}
+
+async function fetchCompanyProfileFromFinnhub(symbol) {
+  if (!FINNHUB_API_KEY) {
+    throw new Error('Finnhub API key is not configured')
+  }
+
+  const endpoint =
+    'https://finnhub.io/api/v1/stock/profile2?' +
+    new URLSearchParams({
+      symbol,
+      token: FINNHUB_API_KEY,
+    }).toString()
+  const response = await fetchWithTimeout(
+    endpoint,
+    {
+      headers: {
+        'User-Agent': 'stock-info-local-app/1.0',
+        Accept: 'application/json',
+      },
+    },
+    10000
+  )
+
+  if (!response.ok) {
+    throw new Error(`Finnhub HTTP ${response.status}`)
+  }
+
+  const payload = await response.json()
+  if (!payload || typeof payload !== 'object' || !Object.keys(payload).length) {
+    throw new Error(`Finnhub profile not found for ${symbol}`)
+  }
+
+  const industry = cleanBusinessSummary(payload.finnhubIndustry ?? '') || null
+  const listedYear = payload.ipo?.slice(0, 4) ? Number(payload.ipo.slice(0, 4)) : null
+  const currentYear = new Date().getUTCFullYear()
+  const yearsOperating =
+    Number.isFinite(listedYear) && listedYear > 1800
+      ? Math.max(1, currentYear - listedYear)
+      : null
+  const sector = industry ? inferSectorFromIndustry(industry) : 'Unknown'
+
+  return {
+    symbol,
+    companyName: payload.name ?? null,
+    sector: sector || 'Unknown',
+    industry: industry || 'Unknown',
+    businessSummary: null,
+    foundedYear: null,
+    listedYear,
+    yearsOperating,
+    yearsSource: listedYear ? 'listed' : null,
+    dataSource: 'finnhub',
+  }
+}
+
+async function fetchCompanyProfileFromWikipedia(symbol, companyName) {
+  const candidates = buildWikiCandidates(companyName)
+
+  let lastError = null
+
+  for (const candidate of candidates) {
+    try {
+      const endpoint =
+        'https://en.wikipedia.org/api/rest_v1/page/summary/' +
+        encodeURIComponent(candidate.replaceAll(' ', '_'))
+      const response = await fetchWithTimeout(
+        endpoint,
+        {
+          headers: {
+            'User-Agent': 'stock-info-local-app/1.0',
+            Accept: 'application/json',
+          },
+        },
+        8000
+      )
+
+      if (!response.ok) {
+        throw new Error(`Wikipedia HTTP ${response.status}`)
+      }
+
+      const payload = await response.json()
+      const extract = cleanBusinessSummary(payload.extract ?? '')
+      const description = cleanBusinessSummary(payload.description ?? '')
+      const lowerDescription = description.toLowerCase()
+      const likelyWrongEntity =
+        companyName?.toLowerCase().includes('inc') &&
+        (lowerDescription.includes('fruit') || lowerDescription.includes('species'))
+      if (likelyWrongEntity) {
+        throw new Error('Wrong Wikipedia entity match')
+      }
+      if (looksLikeNonCompanyWikipediaDescription(description)) {
+        throw new Error('Wikipedia matched a non-company entity')
+      }
+
+      const text = `${description}. ${extract}`.trim()
+      const foundedYear = extractFoundedYear(text)
+      const yearsOperating = foundedYear
+        ? Math.max(1, new Date().getUTCFullYear() - foundedYear)
+        : null
+      const inferred = inferSectorIndustry(text)
+
+      return {
+        symbol,
+        sector: inferred.sector || 'Unknown',
+        industry: inferred.industry || description || 'Unknown',
+        businessSummary: extract || null,
+        foundedYear,
+        listedYear: null,
+        yearsOperating,
+        yearsSource: foundedYear ? 'founded' : null,
+        dataSource: 'wikipedia',
+      }
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  throw new Error(
+    `Wikipedia profile failed for ${symbol}: ${lastError?.message ?? 'unknown error'}`
+  )
+}
+
+async function fetchCompanyProfileFromWikidata(symbol, companyName) {
+  const queryName = cleanNameForWiki(companyName) || symbol
+  const searchEndpoint =
+    'https://www.wikidata.org/w/api.php?' +
+    new URLSearchParams({
+      action: 'wbsearchentities',
+      format: 'json',
+      language: 'en',
+      type: 'item',
+      limit: '6',
+      search: queryName,
+      origin: '*',
+    }).toString()
+
+  const searchResponse = await fetchWithTimeout(
+    searchEndpoint,
+    {
+      headers: {
+        'User-Agent': 'stock-info-local-app/1.0',
+        Accept: 'application/json',
+      },
+    },
+    10000
+  )
+
+  if (!searchResponse.ok) {
+    throw new Error(`Wikidata search HTTP ${searchResponse.status}`)
+  }
+
+  const searchPayload = await searchResponse.json()
+  const candidates = searchPayload?.search ?? []
+  if (!candidates.length) {
+    throw new Error('No Wikidata entity candidates found')
+  }
+
+  const detailedCandidates = []
+  for (const candidate of candidates) {
+    const entity = await fetchWikidataEntityById(candidate.id)
+    if (!entity) {
+      continue
+    }
+    const tickers = extractTickerClaims(entity)
+    const description = entity?.descriptions?.en?.value ?? candidate.description ?? ''
+    const label = entity?.labels?.en?.value ?? candidate.label ?? ''
+
+    const isLikelyCompany = description.toLowerCase().includes('company')
+    let score = 0
+    if (tickers.includes(symbol.toUpperCase())) {
+      score += 8
+    }
+    if (isLikelyCompany) {
+      score += 2
+    }
+    if (label.toLowerCase().includes(queryName.toLowerCase().split(' ')[0] ?? '')) {
+      score += 1
+    }
+
+    if (tickers.includes(symbol.toUpperCase()) || isLikelyCompany) {
+      detailedCandidates.push({
+        score,
+        candidate,
+        entity,
+      })
+    }
+  }
+
+  if (!detailedCandidates.length) {
+    throw new Error('No detailed Wikidata candidate found')
+  }
+
+  detailedCandidates.sort((a, b) => b.score - a.score)
+  const selected = detailedCandidates[0].entity
+  const inceptionYear = extractInceptionYear(selected)
+  const industryIds = extractIndustryEntityIds(selected)
+  const industryLabels = await fetchWikidataLabelsByIds(industryIds.slice(0, 3))
+  const industry =
+    industryLabels[industryIds[0]] ??
+    selected?.descriptions?.en?.value ??
+    detailedCandidates[0].candidate?.description ??
+    'Unknown'
+  const sector = inferSectorFromIndustry(industry)
+
+  const enWikiTitle = extractEnWikipediaTitle(selected)
+  let summary = null
+  if (enWikiTitle) {
+    try {
+      const wiki = await fetchWikipediaSummaryByTitle(enWikiTitle)
+      summary = wiki.extract || wiki.description || null
+    } catch {
+      summary = selected?.descriptions?.en?.value ?? null
+    }
+  } else {
+    summary = selected?.descriptions?.en?.value ?? null
+  }
+
+  return {
+    symbol,
+    sector: sector || 'Unknown',
+    industry: industry || 'Unknown',
+    businessSummary: summary ? cleanBusinessSummary(summary) : null,
+    foundedYear: inceptionYear,
+    listedYear: null,
+    yearsOperating: inceptionYear
+      ? Math.max(1, new Date().getUTCFullYear() - inceptionYear)
+      : null,
+    yearsSource: inceptionYear ? 'founded' : null,
+    dataSource: 'wikidata',
+  }
+}
+
+async function fetchCompanyProfile(symbol, companyName) {
+  const cached = profileCache.get(symbol)
+  if (cached && Date.now() - cached.savedAt < PROFILE_CACHE_TTL_MS) {
+    return applyProfileOverride(symbol, cached.value)
+  }
+
+  let value
+  const companyNameHint = companyName ?? symbol
+
+  if (FINNHUB_API_KEY) {
+    try {
+      value = await fetchCompanyProfileFromFinnhub(symbol)
+      try {
+        const wiki = await fetchCompanyProfileFromWikipedia(
+          symbol,
+          value.companyName ?? companyNameHint
+        )
+        value = {
+          ...value,
+          sector: value.sector === 'Unknown' ? wiki.sector : value.sector,
+          industry: value.industry === 'Unknown' ? wiki.industry : value.industry,
+          businessSummary: wiki.businessSummary ?? value.businessSummary,
+          foundedYear: value.foundedYear ?? wiki.foundedYear,
+          yearsOperating: value.yearsOperating ?? wiki.yearsOperating,
+          yearsSource: value.yearsSource ?? wiki.yearsSource,
+          dataSource: 'finnhub+wikipedia',
+        }
+      } catch {
+        // Keep Finnhub data even if enrichment fails.
+      }
+    } catch {
+      value = null
+    }
+  } else {
+    value = null
+  }
+
+  if (!value) {
+    try {
+      value = await fetchCompanyProfileFromYahoo(symbol)
+    } catch {
+      try {
+        value = await fetchCompanyProfileFromWikipedia(symbol, companyNameHint)
+      } catch {
+        value = await fetchCompanyProfileFromWikidata(symbol, companyNameHint)
+      }
+    }
+  }
+
+  const finalValue = applyProfileOverride(symbol, value)
+  profileCache.set(symbol, { value: finalValue, savedAt: Date.now() })
+  return finalValue
+}
+
 async function fetchSymbolData(symbol) {
   const cached = symbolCache.get(symbol)
   if (cached && Date.now() - cached.savedAt < CACHE_TTL_MS) {
@@ -278,6 +919,34 @@ async function settleSymbolsWithConcurrency(symbols) {
         results[currentIndex] = {
           status: 'rejected',
           reason: new Error(message),
+        }
+      }
+    }
+  }
+
+  const workerCount = Math.min(SYMBOL_CONCURRENCY, symbols.length)
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()))
+  return results
+}
+
+async function settleProfilesWithConcurrency(symbols, companyNameBySymbol) {
+  const results = Array(symbols.length)
+  let cursor = 0
+
+  async function runWorker() {
+    while (cursor < symbols.length) {
+      const currentIndex = cursor
+      cursor += 1
+      const symbol = symbols[currentIndex]
+
+      try {
+        const companyName = companyNameBySymbol.get(symbol) ?? symbol
+        const value = await fetchCompanyProfile(symbol, companyName)
+        results[currentIndex] = { status: 'fulfilled', value }
+      } catch (reason) {
+        results[currentIndex] = {
+          status: 'rejected',
+          reason: new Error(reason?.message ?? `Could not load profile for ${symbol}`),
         }
       }
     }
@@ -426,6 +1095,38 @@ app.get('/api/universe', async (_req, res) => {
         'Could not load stock universe at the moment.',
     })
   }
+})
+
+app.get('/api/company-profiles', async (req, res) => {
+  const symbols = parseSymbols(req.query.symbols)
+
+  if (!symbols.length) {
+    res.status(400).json({
+      error: 'Enter at least one valid ticker. Example: AAPL, MSFT, NVDA',
+    })
+    return
+  }
+
+  let companyNameBySymbol = new Map()
+  try {
+    const universe = await fetchMarketUniverse()
+    companyNameBySymbol = new Map(universe.map((item) => [item.symbol, item.name]))
+  } catch {
+    companyNameBySymbol = new Map()
+  }
+
+  const results = await settleProfilesWithConcurrency(symbols, companyNameBySymbol)
+  const data = results
+    .filter((result) => result.status === 'fulfilled')
+    .map((result) => result.value)
+  const failed = results
+    .filter((result) => result.status === 'rejected')
+    .map((result) => result.reason?.message)
+
+  res.json({
+    data,
+    failed,
+  })
 })
 
 const server = http.createServer(app)

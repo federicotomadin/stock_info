@@ -181,6 +181,13 @@ button:disabled {
   background: #f8fafc;
 }
 
+.recommendation-content {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(240px, 1fr);
+  gap: 0.8rem;
+  align-items: start;
+}
+
 .recommendation-card h3 {
   margin: 0;
   font-size: 0.98rem;
@@ -198,8 +205,67 @@ button:disabled {
   font-size: 0.88rem;
 }
 
+.source-badge {
+  display: inline-block;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 0.04rem 0.42rem;
+  background: #eef2ff;
+  color: #334155;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.recommendation-note {
+  text-align: right;
+  color: #334155;
+  line-height: 1.35;
+}
+
+@media (max-width: 760px) {
+  .recommendation-content {
+    grid-template-columns: 1fr;
+  }
+
+  .recommendation-note {
+    text-align: left;
+  }
+}
+
 .table-panel {
   overflow-x: auto;
+}
+
+.workspace-panel {
+  padding-top: 0.65rem;
+}
+
+.workspace-tabs {
+  display: flex;
+  align-items: end;
+  gap: 0.2rem;
+  border-bottom: 1px solid #dbe3ef;
+  margin: -0.2rem -0.1rem 0.8rem;
+  padding: 0 0.1rem;
+}
+
+.workspace-tab {
+  border: 1px solid #cbd5e1;
+  border-bottom: none;
+  border-top-left-radius: 0.65rem;
+  border-top-right-radius: 0.65rem;
+  background: #eef3fb;
+  color: #1e293b;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.88rem;
+}
+
+.workspace-tab.active {
+  background: #ffffff;
+  color: #0f172a;
+  position: relative;
+  top: 1px;
 }
 
 table {

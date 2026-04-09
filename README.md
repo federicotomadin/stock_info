@@ -17,6 +17,14 @@ npm install
 npm run dev
 ```
 
+Para mejorar la precision de perfil de empresa (industry, sector, anos operando), copia variables:
+
+```bash
+cp .env.example .env
+```
+
+y configura `FINNHUB_API_KEY` con una key gratuita de [Finnhub](https://finnhub.io/).
+
 `npm run dev` levanta:
 
 - frontend Vite en `http://localhost:5173`
@@ -26,4 +34,5 @@ npm run dev
 
 - La API local construye el universo de acciones desde listados publicos de NASDAQ/NYSE y permite navegarlo con busqueda + paginacion.
 - Para precio y variaciones, consulta historicos de [Stooq](https://stooq.com/) y calcula `1D`, `1M` y `1Y`.
+- Para perfil corporativo, usa Finnhub como fuente primaria (si hay API key) con fallback a Yahoo/Wikipedia/Wikidata.
 - En modo manual se permiten hasta 120 tickers por consulta.

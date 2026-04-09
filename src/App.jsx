@@ -325,6 +325,211 @@ function recommendationScore(stock, profile, goals) {
   return score
 }
 
+function shortSummary(summary, maxLength = 220) {
+  if (!summary) {
+    return null
+  }
+
+  const cleaned = summary.replace(/\s+/g, ' ').trim()
+  if (cleaned.length <= maxLength) {
+    return cleaned
+  }
+
+  return `${cleaned.slice(0, maxLength - 3)}...`
+}
+
+function detectSectorHint(stock) {
+  const text = `${stock.symbol ?? ''} ${stock.name ?? ''}`.toUpperCase()
+
+  const has = (tokens) => tokens.some((token) => text.includes(token))
+
+  if (
+    has([
+      'SEMI',
+      'SEMICONDUCTOR',
+      'MICRO',
+      'CHIP',
+      'NVIDIA',
+      'AMD',
+      'INTEL',
+      'TSM',
+      'QUALCOMM',
+      'BROADCOM',
+    ])
+  ) {
+    return {
+      sector: 'Semiconductors',
+      sentence:
+        'It is exposed to semiconductor demand cycles, where execution and product timing can change momentum quickly.',
+    }
+  }
+
+  if (
+    has([
+      'BANK',
+      'FINANCIAL',
+      'PAY',
+      'PAYMENT',
+      'CAPITAL',
+      'CARD',
+      'FINTECH',
+      'INSURANCE',
+      'BROKER',
+      'MERCADOLIBRE',
+      'NU HOLDINGS',
+      'SOFI',
+    ])
+  ) {
+    return {
+      sector: 'Financials / Fintech',
+      sentence:
+        'It operates in financial services where rate cycles, credit quality, and transaction growth are key drivers.',
+    }
+  }
+
+  if (
+    has([
+      'OIL',
+      'GAS',
+      'ENERGY',
+      'PETROLEUM',
+      'PIPELINE',
+      'SOLAR',
+      'POWER',
+      'ELECTRIC',
+      'RENEWABLE',
+      'EXXON',
+      'CHEVRON',
+    ])
+  ) {
+    return {
+      sector: 'Energy',
+      sentence:
+        'It is tied to commodity and energy-cycle dynamics, which can create strong trends but also sharp reversals.',
+    }
+  }
+
+  if (
+    has([
+      'PHARMA',
+      'THERAPEUT',
+      'BIOTECH',
+      'BIO',
+      'HEALTH',
+      'MEDICAL',
+      'DIAGNOSTIC',
+      'LAB',
+      'PFIZER',
+      'NOVARTIS',
+      'MERCK',
+    ])
+  ) {
+    return {
+      sector: 'Healthcare',
+      sentence:
+        'It sits in healthcare, where pipeline execution, approvals, and reimbursement trends can materially impact valuation.',
+    }
+  }
+
+  if (
+    has([
+      'SOFTWARE',
+      'CLOUD',
+      'DATA',
+      'CYBER',
+      'AI',
+      'COMPUTING',
+      'INTERNET',
+      'PLATFORM',
+      'SAAS',
+      'MICROSOFT',
+      'ALPHABET',
+      'AMAZON',
+    ])
+  ) {
+    return {
+      sector: 'Technology / Software',
+      sentence:
+        'It has technology exposure where product velocity, platform adoption, and margin expansion are central to long-term upside.',
+    }
+  }
+
+  if (
+    has([
+      'AUTO',
+      'MOTOR',
+      'AEROSPACE',
+      'AIRLINES',
+      'ALUMINUM',
+      'STEEL',
+      'MACHINERY',
+      'LOGISTICS',
+      'RAIL',
+      'INDUSTRIAL',
+    ])
+  ) {
+    return {
+      sector: 'Industrials',
+      sentence:
+        'It belongs to an industrial value chain where demand, utilization, and cost control usually shape earnings quality.',
+    }
+  }
+
+  if (
+    has([
+      'RETAIL',
+      'CONSUMER',
+      'FOOD',
+      'BEVERAGE',
+      'APPAREL',
+      'HOTEL',
+      'TRAVEL',
+      'RESTAURANT',
+      'E-COMMERCE',
+    ])
+  ) {
+    return {
+      sector: 'Consumer',
+      sentence:
+        'It is driven by consumer demand trends, pricing power, and operating efficiency through the cycle.',
+    }
+  }
+
+  return {
+    sector: 'Diversified business',
+    sentence:
+      'It has broad business exposure, so trend confirmation and risk controls are especially important before entry.',
+  }
+}
+
+function stockInsight(stock, profile) {
+  const company = cleanCompanyName(stock.name) ?? stock.symbol
+  const exchange = stock.exchange ?? 'N/A'
+  const trend = stock.trend?.label ?? 'Neutral'
+
+  if (profile) {
+    const sector = profile.sector ?? 'Unknown sector'
+    const industry = profile.industry ?? 'Unknown industry'
+    const yearsText = profile.yearsOperating
+      ? `${profile.yearsOperating}+ years of operations`
+      : 'operating history not publicly clear'
+    const yearsContext =
+      profile.yearsSource === 'founded'
+        ? ` (estimated from founding year ${profile.foundedYear})`
+        : profile.yearsSource === 'listed'
+          ? ` (estimated from listing year ${profile.listedYear})`
+          : ''
+    const summaryLine =
+      shortSummary(profile.businessSummary) ??
+      'Public business summary is currently limited from the selected data source.'
+
+    return `${company} (${exchange}: ${stock.symbol}) operates in ${industry} within the ${sector} sector, with approximately ${yearsText}${yearsContext}. ${summaryLine} Current signal is ${trend.toLowerCase()}, with a suggested horizon of ${stock.recommendedHorizon}.`
+  }
+
+  const sectorHint = detectSectorHint(stock)
+  return `${company} (${exchange}: ${stock.symbol}) is a real operating business in the ${sectorHint.sector} space. ${sectorHint.sentence} Current signal is ${trend.toLowerCase()}, with a suggested horizon of ${stock.recommendedHorizon}.`
+}
+
 function App() {
   const [symbolsInput, setSymbolsInput] = useState(DEFAULT_SYMBOLS.join(', '))
   const [stocks, setStocks] = useState([])
@@ -346,8 +551,12 @@ function App() {
   const [investmentExperience, setInvestmentExperience] = useState('intermediate')
   const [investmentHorizon, setInvestmentHorizon] = useState('medium')
   const [investmentGoals, setInvestmentGoals] = useState(['growth'])
+  const [companyProfiles, setCompanyProfiles] = useState({})
+  const [profileLoading, setProfileLoading] = useState(false)
+  const [workspaceTab, setWorkspaceTab] = useState('screener')
   const hasLoadedUniverseRef = useRef(false)
   const universeRequestIdRef = useRef(0)
+  const profileRequestIdRef = useRef(0)
 
   const filteredUniverse = useMemo(() => {
     const query = universeSearch.trim().toUpperCase()
@@ -470,6 +679,50 @@ function App() {
       .sort((a, b) => b.recommendationScore - a.recommendationScore)
       .slice(0, 8)
   }, [countryFilteredStocks, investmentGoals, riskProfile, sortedStocks])
+
+  useEffect(() => {
+    if (workspaceTab !== 'profile') {
+      return
+    }
+
+    const symbols = recommendedStocks.map((stock) => stock.symbol).filter(Boolean)
+    if (!symbols.length) {
+      setCompanyProfiles({})
+      return
+    }
+
+    const requestId = profileRequestIdRef.current + 1
+    profileRequestIdRef.current = requestId
+    setProfileLoading(true)
+
+    const endpoint = new URL('/api/company-profiles', window.location.origin)
+    endpoint.searchParams.set('symbols', symbols.join(','))
+
+    void fetch(endpoint)
+      .then((response) => response.json())
+      .then((payload) => {
+        if (profileRequestIdRef.current !== requestId) {
+          return
+        }
+
+        const map = {}
+        for (const item of payload.data ?? []) {
+          map[item.symbol] = item
+        }
+        setCompanyProfiles(map)
+      })
+      .catch(() => {
+        if (profileRequestIdRef.current !== requestId) {
+          return
+        }
+        setCompanyProfiles({})
+      })
+      .finally(() => {
+        if (profileRequestIdRef.current === requestId) {
+          setProfileLoading(false)
+        }
+      })
+  }, [recommendedStocks, workspaceTab])
 
   function toggleGoal(goalId) {
     setInvestmentGoals((current) => {
@@ -899,211 +1152,271 @@ function App() {
         ) : null}
       </section>
 
-      <section className="panel profile-panel">
-        <h2>Investor profile assistant</h2>
-        <p className="subtitle">
-          Answer a few questions and get stock ideas with a suggested horizon.
-        </p>
-        <div className="profile-grid">
-          <fieldset>
-            <legend>Risk tolerance</legend>
-            <label>
-              <input
-                type="radio"
-                name="risk-tolerance"
-                checked={riskTolerance === 'low'}
-                onChange={() => setRiskTolerance('low')}
-              />
-              Low
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="risk-tolerance"
-                checked={riskTolerance === 'medium'}
-                onChange={() => setRiskTolerance('medium')}
-              />
-              Medium
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="risk-tolerance"
-                checked={riskTolerance === 'high'}
-                onChange={() => setRiskTolerance('high')}
-              />
-              High
-            </label>
-          </fieldset>
-
-          <fieldset>
-            <legend>Experience</legend>
-            <label>
-              <input
-                type="radio"
-                name="experience"
-                checked={investmentExperience === 'beginner'}
-                onChange={() => setInvestmentExperience('beginner')}
-              />
-              Beginner
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="experience"
-                checked={investmentExperience === 'intermediate'}
-                onChange={() => setInvestmentExperience('intermediate')}
-              />
-              Intermediate
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="experience"
-                checked={investmentExperience === 'advanced'}
-                onChange={() => setInvestmentExperience('advanced')}
-              />
-              Advanced
-            </label>
-          </fieldset>
-
-          <fieldset>
-            <legend>Preferred horizon</legend>
-            <label>
-              <input
-                type="radio"
-                name="preferred-horizon"
-                checked={investmentHorizon === 'short'}
-                onChange={() => setInvestmentHorizon('short')}
-              />
-              1-3 months
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="preferred-horizon"
-                checked={investmentHorizon === 'medium'}
-                onChange={() => setInvestmentHorizon('medium')}
-              />
-              3-12 months
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="preferred-horizon"
-                checked={investmentHorizon === 'long'}
-                onChange={() => setInvestmentHorizon('long')}
-              />
-              1+ years
-            </label>
-          </fieldset>
-
-          <fieldset>
-            <legend>Goals (multiple choice)</legend>
-            {INVESTMENT_GOALS.map((goal) => (
-              <label key={goal.id}>
-                <input
-                  type="checkbox"
-                  checked={investmentGoals.includes(goal.id)}
-                  onChange={() => toggleGoal(goal.id)}
-                />
-                {goal.label}
-              </label>
-            ))}
-          </fieldset>
+      <section className="panel workspace-panel">
+        <div className="workspace-tabs" role="tablist" aria-label="Workspace tabs">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={workspaceTab === 'screener'}
+            className={`workspace-tab ${workspaceTab === 'screener' ? 'active' : ''}`}
+            onClick={() => setWorkspaceTab('screener')}
+          >
+            Market results
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={workspaceTab === 'profile'}
+            className={`workspace-tab ${workspaceTab === 'profile' ? 'active' : ''}`}
+            onClick={() => setWorkspaceTab('profile')}
+          >
+            Investor profile
+          </button>
         </div>
 
-        <p className="status">
-          Estimated profile: <strong>{riskProfile}</strong>
-        </p>
+        {workspaceTab === 'profile' ? (
+          <div className="profile-panel">
+            <h2>Investor profile assistant</h2>
+            <p className="subtitle">
+              Answer a few questions and get stock ideas with a suggested horizon.
+            </p>
+            <div className="profile-grid">
+              <fieldset>
+                <legend>Risk tolerance</legend>
+                <label>
+                  <input
+                    type="radio"
+                    name="risk-tolerance"
+                    checked={riskTolerance === 'low'}
+                    onChange={() => setRiskTolerance('low')}
+                  />
+                  Low
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="risk-tolerance"
+                    checked={riskTolerance === 'medium'}
+                    onChange={() => setRiskTolerance('medium')}
+                  />
+                  Medium
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="risk-tolerance"
+                    checked={riskTolerance === 'high'}
+                    onChange={() => setRiskTolerance('high')}
+                  />
+                  High
+                </label>
+              </fieldset>
 
-        {recommendedStocks.length ? (
-          <div className="recommendations">
-            {recommendedStocks.map((stock) => (
-              <article key={`rec-${stock.symbol}`} className="recommendation-card">
-                <h3>
-                  {stock.symbol} <small>{cleanCompanyName(stock.name) ?? 'N/A'}</small>
-                </h3>
-                <p>
-                  Trend: <strong>{stock.trend.label}</strong> | Country:{' '}
-                  <strong>{stock.country}</strong>
-                </p>
-                <p>
-                  Suggested horizon: <strong>{stock.recommendedHorizon}</strong>
-                </p>
-                <p className={metricClass(stock.yearChange)}>
-                  1Y performance: {formatPercent(stock.yearChange)}
-                </p>
-              </article>
-            ))}
+              <fieldset>
+                <legend>Experience</legend>
+                <label>
+                  <input
+                    type="radio"
+                    name="experience"
+                    checked={investmentExperience === 'beginner'}
+                    onChange={() => setInvestmentExperience('beginner')}
+                  />
+                  Beginner
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="experience"
+                    checked={investmentExperience === 'intermediate'}
+                    onChange={() => setInvestmentExperience('intermediate')}
+                  />
+                  Intermediate
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="experience"
+                    checked={investmentExperience === 'advanced'}
+                    onChange={() => setInvestmentExperience('advanced')}
+                  />
+                  Advanced
+                </label>
+              </fieldset>
+
+              <fieldset>
+                <legend>Preferred horizon</legend>
+                <label>
+                  <input
+                    type="radio"
+                    name="preferred-horizon"
+                    checked={investmentHorizon === 'short'}
+                    onChange={() => setInvestmentHorizon('short')}
+                  />
+                  1-3 months
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="preferred-horizon"
+                    checked={investmentHorizon === 'medium'}
+                    onChange={() => setInvestmentHorizon('medium')}
+                  />
+                  3-12 months
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="preferred-horizon"
+                    checked={investmentHorizon === 'long'}
+                    onChange={() => setInvestmentHorizon('long')}
+                  />
+                  1+ years
+                </label>
+              </fieldset>
+
+              <fieldset>
+                <legend>Goals (multiple choice)</legend>
+                {INVESTMENT_GOALS.map((goal) => (
+                  <label key={goal.id}>
+                    <input
+                      type="checkbox"
+                      checked={investmentGoals.includes(goal.id)}
+                      onChange={() => toggleGoal(goal.id)}
+                    />
+                    {goal.label}
+                  </label>
+                ))}
+              </fieldset>
+            </div>
+
+            <p className="status">
+              Estimated profile: <strong>{riskProfile}</strong>
+            </p>
+            {profileLoading ? (
+              <p className="status">Loading company fundamentals for recommendations...</p>
+            ) : null}
+
+            {recommendedStocks.length ? (
+              <div className="recommendations">
+                {recommendedStocks.map((stock) => (
+                  <article key={`rec-${stock.symbol}`} className="recommendation-card">
+                    <div className="recommendation-content">
+                      <div className="recommendation-main">
+                        {companyProfiles[stock.symbol]?.dataSource ? (
+                          <p>
+                            Source:{' '}
+                            <span className="source-badge">
+                              {companyProfiles[stock.symbol].dataSource}
+                            </span>
+                          </p>
+                        ) : null}
+                        {companyProfiles[stock.symbol] ? (
+                          <p>
+                            Industry:{' '}
+                            <strong>{companyProfiles[stock.symbol].industry ?? 'Unknown'}</strong>{' '}
+                            | Sector:{' '}
+                            <strong>{companyProfiles[stock.symbol].sector ?? 'Unknown'}</strong>
+                          </p>
+                        ) : null}
+                        {companyProfiles[stock.symbol]?.yearsOperating ? (
+                          <p>
+                            Years operating:{' '}
+                            <strong>{companyProfiles[stock.symbol].yearsOperating}+</strong>
+                          </p>
+                        ) : null}
+                        <h3>
+                          {stock.symbol} <small>{cleanCompanyName(stock.name) ?? 'N/A'}</small>
+                        </h3>
+                        <p>
+                          Trend: <strong>{stock.trend.label}</strong> | Country:{' '}
+                          <strong>{stock.country}</strong>
+                        </p>
+                        <p>
+                          Suggested horizon: <strong>{stock.recommendedHorizon}</strong>
+                        </p>
+                        <p className={metricClass(stock.yearChange)}>
+                          1Y performance: {formatPercent(stock.yearChange)}
+                        </p>
+                      </div>
+                      <p className="recommendation-note">
+                        {stockInsight(stock, companyProfiles[stock.symbol])}
+                      </p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="status">No recommendations yet. Load stock data first.</p>
+            )}
           </div>
         ) : (
-          <p className="status">No recommendations yet. Load stock data first.</p>
+          <div className="table-panel">
+            <table>
+              <thead>
+                <tr>
+                  <th className="col-ticker">Ticker</th>
+                  <th className="col-name">Name</th>
+                  <th className="col-exchange">Exchange</th>
+                  <th className="col-price">Price</th>
+                  <th className="col-metric">1D</th>
+                  <th className="col-metric">1M</th>
+                  <th className="col-metric">1Y</th>
+                  <th className="col-trend">Trend signal</th>
+                  <th className="col-date">Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedStocks.map((stock) => (
+                  <tr key={stock.symbol}>
+                    <td className="col-ticker">{stock.symbol}</td>
+                    <td
+                      className="cell-name col-name"
+                      title={cleanCompanyName(stock.name) ?? 'N/A'}
+                    >
+                      {cleanCompanyName(stock.name) ?? 'N/A'}
+                    </td>
+                    <td className="col-exchange" title={stock.exchange ?? 'N/A'}>
+                      {stock.exchange ?? 'N/A'}
+                    </td>
+                    <td className="col-price">${stock.price.toFixed(2)}</td>
+                    <td className={`col-metric ${metricClass(stock.dayChange)}`}>
+                      {formatPercent(stock.dayChange)}
+                    </td>
+                    <td className={`col-metric ${metricClass(stock.monthChange)}`}>
+                      {formatPercent(stock.monthChange)}
+                    </td>
+                    <td className={`col-metric ${metricClass(stock.yearChange)}`}>
+                      {formatPercent(stock.yearChange)}
+                    </td>
+                    <td
+                      className="col-trend"
+                      title={trendTooltip(stock.trend.label, stock.trend.detail)}
+                    >
+                      <span className={`trend-chip ${stock.trend.tone}`}>
+                        {stock.trend.label}
+                      </span>
+                    </td>
+                    <td className="col-date">{stock.updatedAt}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {!loading && !pagedStocks.length && !error ? (
+              <p className="status">No data to display.</p>
+            ) : null}
+            {mode === 'universe' &&
+            loading &&
+            (trendFilter !== 'all' || countryFilter !== 'all') &&
+            !pagedStocks.length &&
+            sortedStocks.length > 0 ? (
+              <p className="status warning">
+                No matching stocks yet with current filters ({trendFilter} /{' '}
+                {countryFilter}). Try "All" or wait until loading finishes.
+              </p>
+            ) : null}
+          </div>
         )}
-      </section>
-
-      <section className="panel table-panel">
-        <table>
-          <thead>
-            <tr>
-              <th className="col-ticker">Ticker</th>
-              <th className="col-name">Name</th>
-              <th className="col-exchange">Exchange</th>
-              <th className="col-price">Price</th>
-              <th className="col-metric">1D</th>
-              <th className="col-metric">1M</th>
-              <th className="col-metric">1Y</th>
-              <th className="col-trend">Trend signal</th>
-              <th className="col-date">Updated</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pagedStocks.map((stock) => (
-              <tr key={stock.symbol}>
-                <td className="col-ticker">{stock.symbol}</td>
-                <td className="cell-name col-name" title={cleanCompanyName(stock.name) ?? 'N/A'}>
-                  {cleanCompanyName(stock.name) ?? 'N/A'}
-                </td>
-                <td className="col-exchange" title={stock.exchange ?? 'N/A'}>
-                  {stock.exchange ?? 'N/A'}
-                </td>
-                <td className="col-price">${stock.price.toFixed(2)}</td>
-                <td className={`col-metric ${metricClass(stock.dayChange)}`}>
-                  {formatPercent(stock.dayChange)}
-                </td>
-                <td className={`col-metric ${metricClass(stock.monthChange)}`}>
-                  {formatPercent(stock.monthChange)}
-                </td>
-                <td className={`col-metric ${metricClass(stock.yearChange)}`}>
-                  {formatPercent(stock.yearChange)}
-                </td>
-                <td
-                  className="col-trend"
-                  title={trendTooltip(stock.trend.label, stock.trend.detail)}
-                >
-                  <span className={`trend-chip ${stock.trend.tone}`}>
-                    {stock.trend.label}
-                  </span>
-                </td>
-                <td className="col-date">{stock.updatedAt}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {!loading && !pagedStocks.length && !error ? (
-          <p className="status">No data to display.</p>
-        ) : null}
-        {mode === 'universe' &&
-        loading &&
-        (trendFilter !== 'all' || countryFilter !== 'all') &&
-        !pagedStocks.length &&
-        sortedStocks.length > 0 ? (
-          <p className="status warning">
-            No matching stocks yet with current filters ({trendFilter} /{' '}
-            {countryFilter}). Try "All" or wait until loading finishes.
-          </p>
-        ) : null}
       </section>
     </main>
   )
