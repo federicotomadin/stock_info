@@ -89,6 +89,29 @@ button:disabled {
   color: #ffffff;
 }
 
+.trend-filter {
+  align-items: flex-start;
+}
+
+.country-filter {
+  align-items: flex-start;
+}
+
+.trend-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #334155;
+  background: #f8fafc;
+  cursor: help;
+}
+
 .status {
   margin: 0.75rem 0 0;
   font-size: 0.95rem;
@@ -100,6 +123,79 @@ button:disabled {
 
 .status.warning {
   color: #a16207;
+}
+
+.profile-panel h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.profile-grid fieldset {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.7rem;
+  padding: 0.55rem 0.65rem 0.65rem;
+  margin: 0;
+}
+
+.profile-grid legend {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #334155;
+  padding: 0 0.2rem;
+}
+
+.profile-grid label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  margin-top: 0.35rem;
+}
+
+.profile-grid input[type='radio'],
+.profile-grid input[type='checkbox'] {
+  min-width: auto;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.recommendations {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.recommendation-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.7rem;
+  padding: 0.55rem 0.7rem;
+  background: #f8fafc;
+}
+
+.recommendation-card h3 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.recommendation-card h3 small {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #64748b;
+  margin-left: 0.35rem;
+}
+
+.recommendation-card p {
+  margin: 0.26rem 0 0;
+  font-size: 0.88rem;
 }
 
 .table-panel {
@@ -131,12 +227,21 @@ td {
 }
 
 .col-name {
-  width: 38%;
+  width: 29%;
+  padding-left: 0.9rem;
+}
+
+.col-ticker {
+  width: 8%;
+  padding-right: 0.9rem;
+  border-right: 1px solid #e2e8f0;
 }
 
 .col-exchange {
-  width: 9%;
+  width: 10%;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .col-price {
@@ -151,6 +256,11 @@ td {
 
 .col-date {
   width: 12%;
+  white-space: nowrap;
+}
+
+.col-trend {
+  width: 13%;
   white-space: nowrap;
 }
 
@@ -172,4 +282,27 @@ td {
 
 .neutral {
   color: #0f172a;
+}
+
+.trend-chip {
+  display: inline-block;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 0.12rem 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.trend-chip.positive {
+  background: #ecfdf3;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.trend-chip.negative {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
 }

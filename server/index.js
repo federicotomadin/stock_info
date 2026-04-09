@@ -5,10 +5,13 @@ import http from 'node:http'
 const app = express()
 const PORT = Number(process.env.PORT || 9001)
 const MAX_SYMBOLS = 120
+const SYMBOL_CONCURRENCY = 4
+const FETCH_RETRIES = 2
 const CACHE_TTL_MS = 5 * 60 * 1000
 const symbolCache = new Map()
 const UNIVERSE_TTL_MS = 24 * 60 * 60 * 1000
 let marketUniverseCache = { data: null, savedAt: 0 }
+let stooqDisabledUntil = 0
 
 app.use(cors())
 
@@ -49,6 +52,42 @@ function findCloseAtOrBefore(closes, index) {
     }
   }
   return null
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function withRetries(operation, retries = FETCH_RETRIES, delayMs = 250) {
+  let lastError
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await operation()
+    } catch (error) {
+      lastError = error
+      if (attempt === retries) {
+        throw lastError
+      }
+      await wait(delayMs * (attempt + 1))
+    }
+  }
+
+  throw lastError
 }
 
 function buildStockFromCsv(symbol, csv) {
@@ -130,27 +169,49 @@ function buildStockFromYahoo(symbol, payload) {
 
 async function fetchSymbolDataFromYahoo(symbol) {
   const yahooTicker = toYahooTicker(symbol)
-  const endpoint =
-    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}` +
-    '?range=2y&interval=1d&events=div,splits&includePrePost=false'
-  const response = await fetch(endpoint, {
-    headers: {
-      'User-Agent': 'stock-info-local-app/1.0',
-      Accept: 'application/json',
-    },
-  })
+  const hosts = [
+    'https://query1.finance.yahoo.com',
+    'https://query2.finance.yahoo.com',
+  ]
 
-  if (!response.ok) {
-    throw new Error(`Could not query ${symbol}.`)
+  let lastError = null
+  for (const host of hosts) {
+    try {
+      return await withRetries(async () => {
+        const endpoint =
+          `${host}/v8/finance/chart/${encodeURIComponent(yahooTicker)}` +
+          '?range=2y&interval=1d&events=div,splits&includePrePost=false'
+        const response = await fetchWithTimeout(
+          endpoint,
+          {
+            headers: {
+              'User-Agent': 'stock-info-local-app/1.0',
+              Accept: 'application/json',
+            },
+          },
+          12000
+        )
+
+        if (!response.ok) {
+          throw new Error(`Yahoo HTTP ${response.status}`)
+        }
+
+        const payload = await response.json()
+        const yahooError = payload?.chart?.error?.description
+        if (yahooError) {
+          throw new Error(yahooError)
+        }
+
+        return buildStockFromYahoo(symbol, payload)
+      })
+    } catch (error) {
+      lastError = error
+    }
   }
 
-  const payload = await response.json()
-  const yahooError = payload?.chart?.error?.description
-  if (yahooError) {
-    throw new Error(`Could not query ${symbol}: ${yahooError}`)
-  }
-
-  return buildStockFromYahoo(symbol, payload)
+  throw new Error(
+    `Yahoo fetch failed for ${symbol}: ${lastError?.message ?? 'unknown error'}`
+  )
 }
 
 async function fetchSymbolData(symbol) {
@@ -159,27 +220,72 @@ async function fetchSymbolData(symbol) {
     return cached.value
   }
 
-  const stooqTicker = toStooqTicker(symbol)
-  const endpoint = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqTicker)}&i=d`
-  const response = await fetch(endpoint)
-
-  if (!response.ok) {
-    throw new Error(`Could not query ${symbol}.`)
-  }
-
-  const csv = await response.text()
+  const stooqAvailable = Date.now() >= stooqDisabledUntil
   let value
-  if (csv.includes('Exceeded the daily hits limit')) {
-    value = await fetchSymbolDataFromYahoo(symbol)
-  } else {
+
+  if (stooqAvailable) {
     try {
-      value = buildStockFromCsv(symbol, csv)
-    } catch {
+      value = await withRetries(async () => {
+        const stooqTicker = toStooqTicker(symbol)
+        const endpoint = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqTicker)}&i=d`
+        const response = await fetchWithTimeout(endpoint, {}, 3000)
+
+        if (!response.ok) {
+          throw new Error(`Stooq HTTP ${response.status}`)
+        }
+
+        const csv = await response.text()
+        if (csv.includes('Exceeded the daily hits limit')) {
+          stooqDisabledUntil = Date.now() + 30 * 60 * 1000
+          throw new Error('Stooq daily limit reached')
+        }
+
+        return buildStockFromCsv(symbol, csv)
+      }, 1)
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        stooqDisabledUntil = Date.now() + 30 * 60 * 1000
+      }
+
       value = await fetchSymbolDataFromYahoo(symbol)
     }
+  } else {
+    value = await fetchSymbolDataFromYahoo(symbol)
   }
+
   symbolCache.set(symbol, { value, savedAt: Date.now() })
   return value
+}
+
+async function settleSymbolsWithConcurrency(symbols) {
+  const results = Array(symbols.length)
+  let cursor = 0
+
+  async function runWorker() {
+    while (cursor < symbols.length) {
+      const currentIndex = cursor
+      cursor += 1
+      const symbol = symbols[currentIndex]
+
+      try {
+        const value = await fetchSymbolData(symbol)
+        results[currentIndex] = { status: 'fulfilled', value }
+      } catch (reason) {
+        const message =
+          reason?.message === 'fetch failed'
+            ? `Network error while loading ${symbol}`
+            : (reason?.message ?? `Could not load ${symbol}`)
+        results[currentIndex] = {
+          status: 'rejected',
+          reason: new Error(message),
+        }
+      }
+    }
+  }
+
+  const workerCount = Math.min(SYMBOL_CONCURRENCY, symbols.length)
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()))
+  return results
 }
 
 function parseNasdaqPipeFile(content, mapLine) {
@@ -291,9 +397,7 @@ app.get('/api/stocks', async (req, res) => {
     return
   }
 
-  const results = await Promise.allSettled(
-    symbols.map((symbol) => fetchSymbolData(symbol))
-  )
+  const results = await settleSymbolsWithConcurrency(symbols)
 
   const data = results
     .filter((result) => result.status === 'fulfilled')
