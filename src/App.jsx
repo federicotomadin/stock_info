@@ -969,456 +969,513 @@ function App() {
     loadStocks(symbolsInput)
   }
 
+  const progressPercent =
+    universeProgress.total > 0
+      ? Math.round((universeProgress.completed / universeProgress.total) * 100)
+      : 0
+
   return (
-    <main className="page">
-      <header className="hero">
-        <p className="eyebrow">Stock Screener Landing</p>
-        <h1>Stocks Sorted by Performance</h1>
-        <p className="subtitle">
-          Browse, filter, and sort by 1D, 1M, 1Y and trend signals.
-        </p>
+    <>
+      <header className="app-header">
+        <div className="app-header-inner">
+          <h1>
+            Stock Screener
+            <span className="app-header-subtitle">Performance Dashboard</span>
+          </h1>
+        </div>
       </header>
 
-      <section className="panel">
-        <div className="sort">
-          <span>Mode:</span>
-          <button
-            type="button"
-            className={mode === 'universe' ? 'active' : ''}
-            onClick={() => setMode('universe')}
-          >
-            Full market
-          </button>
-          <button
-            type="button"
-            className={mode === 'manual' ? 'active' : ''}
-            onClick={() => setMode('manual')}
-          >
-            Manual (tickers)
-          </button>
-        </div>
+      <main className="page">
+        {/* Controls panel */}
+        <section className="panel">
+          <div className="panel-header">
+            <span className="panel-title">Controls</span>
+          </div>
 
-        {mode === 'universe' ? (
-          <>
-            <form
-              className="controls"
-              onSubmit={(event) => {
-                event.preventDefault()
-                setCurrentPage(1)
-              }}
+          <div className="toolbar">
+            <span className="toolbar-label">Mode:</span>
+            <button
+              type="button"
+              className={`chip ${mode === 'universe' ? 'active' : ''}`}
+              onClick={() => setMode('universe')}
             >
-              <label htmlFor="universe-search">
-                Search market ({filteredUniverse.length} symbols)
-              </label>
-              <div className="row">
+              Full market
+            </button>
+            <button
+              type="button"
+              className={`chip ${mode === 'manual' ? 'active' : ''}`}
+              onClick={() => setMode('manual')}
+            >
+              Manual tickers
+            </button>
+          </div>
+
+          {mode === 'universe' ? (
+            <>
+              <form
+                className="controls"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  setCurrentPage(1)
+                }}
+              >
+                <label htmlFor="universe-search">
+                  Search market ({filteredUniverse.length} symbols)
+                </label>
+                <div className="input-row">
+                  <input
+                    id="universe-search"
+                    className="input-field"
+                    type="text"
+                    value={universeSearch}
+                    onChange={(event) => setUniverseSearch(event.target.value)}
+                    placeholder="Example: Apple, AAPL, NYSE"
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => void loadUniverse()}
+                  >
+                    {universeLoading ? 'Refreshing...' : 'Refresh universe'}
+                  </button>
+                </div>
+              </form>
+
+              <div className="pagination">
+                <span className="pagination-label">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={currentPage <= 1}
+                  onClick={() => setCurrentPage((value) => Math.max(1, value - 1))}
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={currentPage >= totalPages}
+                  onClick={() =>
+                    setCurrentPage((value) => Math.min(totalPages, value + 1))
+                  }
+                >
+                  Next
+                </button>
+              </div>
+            </>
+          ) : null}
+
+          {mode === 'manual' ? (
+            <form className="controls" onSubmit={handleSubmit}>
+              <label htmlFor="symbols">Manual tickers (max {MAX_SYMBOLS})</label>
+              <div className="input-row">
                 <input
-                  id="universe-search"
+                  id="symbols"
+                  className="input-field"
                   type="text"
-                  value={universeSearch}
-                  onChange={(event) => setUniverseSearch(event.target.value)}
-                  placeholder="Example: Apple, AAPL, NYSE"
+                  value={symbolsInput}
+                  onChange={(event) => setSymbolsInput(event.target.value)}
+                  placeholder="AAPL, MSFT, NVDA"
                 />
-                <button type="button" onClick={() => void loadUniverse()}>
-                  {universeLoading ? 'Refreshing...' : 'Refresh universe'}
+                <button type="submit" className="btn btn-primary" disabled={loading}>
+                  {loading ? 'Loading...' : 'Update'}
                 </button>
               </div>
             </form>
+          ) : null}
 
-            <div className="sort">
-              <span>
-                Page {currentPage} of {totalPages}
-              </span>
+          <div className="toolbar">
+            <span className="toolbar-label">Sort by:</span>
+            {SORT_OPTIONS.map((option) => (
               <button
+                key={option.id}
+                className={`chip ${sortMetric === option.id ? 'active' : ''}`}
                 type="button"
-                disabled={currentPage <= 1}
-                onClick={() => setCurrentPage((value) => Math.max(1, value - 1))}
+                onClick={() => setSortMetric(option.id)}
               >
-                Previous
+                {option.label}
               </button>
-              <button
-                type="button"
-                disabled={currentPage >= totalPages}
-                onClick={() =>
-                  setCurrentPage((value) => Math.min(totalPages, value + 1))
-                }
-              >
-                Next
-              </button>
-            </div>
-          </>
-        ) : null}
-
-        {mode === 'manual' ? (
-        <form className="controls" onSubmit={handleSubmit}>
-          <label htmlFor="symbols">Manual tickers (max {MAX_SYMBOLS})</label>
-          <div className="row">
-            <input
-              id="symbols"
-              type="text"
-              value={symbolsInput}
-              onChange={(event) => setSymbolsInput(event.target.value)}
-              placeholder="AAPL, MSFT, NVDA"
-            />
-            <button type="submit" disabled={loading}>
-              {loading ? 'Loading...' : 'Update'}
+            ))}
+            <button
+              type="button"
+              className="chip"
+              onClick={() =>
+                setSortDirection((current) =>
+                  current === 'desc' ? 'asc' : 'desc'
+                )
+              }
+            >
+              {sortDirection === 'desc' ? 'Highest first' : 'Lowest first'}
             </button>
           </div>
-        </form>
-        ) : null}
 
-        <div className="sort">
-          <span>Sort by:</span>
-          {SORT_OPTIONS.map((option) => (
+          <div className="toolbar">
+            <span className="toolbar-label">Trend:</span>
             <button
-              key={option.id}
-              className={sortMetric === option.id ? 'active' : ''}
               type="button"
-              onClick={() => setSortMetric(option.id)}
+              className={`chip ${trendFilter === 'all' ? 'active' : ''}`}
+              onClick={() => setTrendFilter('all')}
+              title="Show all trend labels"
             >
-              {option.label}
+              All
             </button>
-          ))}
-          <button
-            type="button"
-            onClick={() =>
-              setSortDirection((current) =>
-                current === 'desc' ? 'asc' : 'desc'
-              )
-            }
-          >
-            {sortDirection === 'desc' ? 'Highest first' : 'Lowest first'}
-          </button>
-        </div>
-        <div className="sort trend-filter">
-          <span>Trend label:</span>
-          <button
-            type="button"
-            className={trendFilter === 'all' ? 'active' : ''}
-            onClick={() => setTrendFilter('all')}
-            title="Show all trend labels"
-          >
-            All
-          </button>
-          {TREND_LABELS.map((label) => (
+            {TREND_LABELS.map((label) => (
+              <button
+                key={label}
+                type="button"
+                className={`chip ${trendFilter === label ? 'active' : ''}`}
+                onClick={() => setTrendFilter(label)}
+                title={TREND_MEANINGS[label]}
+              >
+                {label}
+              </button>
+            ))}
+            <span
+              className="trend-help"
+              title={TREND_LABELS.map((label) => `${label}: ${TREND_MEANINGS[label]}`).join('\n')}
+              aria-label="Trend labels meaning"
+            >
+              ?
+            </span>
+          </div>
+
+          <div className="toolbar">
+            <span className="toolbar-label">Country:</span>
             <button
-              key={label}
               type="button"
-              className={trendFilter === label ? 'active' : ''}
-              onClick={() => setTrendFilter(label)}
-              title={TREND_MEANINGS[label]}
+              className={`chip ${countryFilter === 'all' ? 'active' : ''}`}
+              onClick={() => setCountryFilter('all')}
+              title="Show all countries"
             >
-              {label}
+              All
             </button>
-          ))}
-          <span
-            className="trend-help"
-            title={TREND_LABELS.map((label) => `${label}: ${TREND_MEANINGS[label]}`).join('\n')}
-            aria-label="Trend labels meaning"
-          >
-            ?
-          </span>
-        </div>
-        <div className="sort country-filter">
-          <span>Country:</span>
-          <button
-            type="button"
-            className={countryFilter === 'all' ? 'active' : ''}
-            onClick={() => setCountryFilter('all')}
-            title="Show all countries"
-          >
-            All
-          </button>
-          {COUNTRY_LABELS.map((label) => (
+            {COUNTRY_LABELS.map((label) => (
+              <button
+                key={label}
+                type="button"
+                className={`chip ${countryFilter === label ? 'active' : ''}`}
+                onClick={() => setCountryFilter(label)}
+                title={`Filter by ${label}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {universeError ? <p className="status error">{universeError}</p> : null}
+          {error ? <p className="status error">{error}</p> : null}
+          {warning ? <p className="status warning">{warning}</p> : null}
+          {mode === 'universe' && loading && universeProgress.total > 0 ? (
+            <>
+              <p className="status loading">
+                Loading full market data... batch {universeProgress.completed} /{' '}
+                {universeProgress.total}
+              </p>
+              <div className="progress-bar-wrapper">
+                <div
+                  className="progress-bar-fill"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+            </>
+          ) : null}
+        </section>
+
+        {/* Workspace panel */}
+        <section className="panel workspace-panel">
+          <div className="workspace-tabs" role="tablist" aria-label="Workspace tabs">
             <button
-              key={label}
               type="button"
-              className={countryFilter === label ? 'active' : ''}
-              onClick={() => setCountryFilter(label)}
-              title={`Filter by ${label}`}
+              role="tab"
+              aria-selected={workspaceTab === 'screener'}
+              className={`workspace-tab ${workspaceTab === 'screener' ? 'active' : ''}`}
+              onClick={() => setWorkspaceTab('screener')}
             >
-              {label}
+              Market Results
             </button>
-          ))}
-        </div>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={workspaceTab === 'profile'}
+              className={`workspace-tab ${workspaceTab === 'profile' ? 'active' : ''}`}
+              onClick={() => setWorkspaceTab('profile')}
+            >
+              Investor Profile
+            </button>
+          </div>
 
-        {universeError ? <p className="status error">{universeError}</p> : null}
-        {error ? <p className="status error">{error}</p> : null}
-        {warning ? <p className="status warning">{warning}</p> : null}
-        {mode === 'universe' && loading && universeProgress.total > 0 ? (
-          <p className="status">
-            Loading full market data... batch {universeProgress.completed} /{' '}
-            {universeProgress.total}
-          </p>
-        ) : null}
-      </section>
-
-      <section className="panel workspace-panel">
-        <div className="workspace-tabs" role="tablist" aria-label="Workspace tabs">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={workspaceTab === 'screener'}
-            className={`workspace-tab ${workspaceTab === 'screener' ? 'active' : ''}`}
-            onClick={() => setWorkspaceTab('screener')}
-          >
-            Market results
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={workspaceTab === 'profile'}
-            className={`workspace-tab ${workspaceTab === 'profile' ? 'active' : ''}`}
-            onClick={() => setWorkspaceTab('profile')}
-          >
-            Investor profile
-          </button>
-        </div>
-
-        {workspaceTab === 'profile' ? (
-          <div className="profile-panel">
-            <h2>Investor profile assistant</h2>
-            <p className="subtitle">
-              Answer a few questions and get stock ideas with a suggested horizon.
-            </p>
-            <div className="profile-grid">
-              <fieldset>
-                <legend>Risk tolerance</legend>
-                <label>
-                  <input
-                    type="radio"
-                    name="risk-tolerance"
-                    checked={riskTolerance === 'low'}
-                    onChange={() => setRiskTolerance('low')}
-                  />
-                  Low
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    name="risk-tolerance"
-                    checked={riskTolerance === 'medium'}
-                    onChange={() => setRiskTolerance('medium')}
-                  />
-                  Medium
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    name="risk-tolerance"
-                    checked={riskTolerance === 'high'}
-                    onChange={() => setRiskTolerance('high')}
-                  />
-                  High
-                </label>
-              </fieldset>
-
-              <fieldset>
-                <legend>Experience</legend>
-                <label>
-                  <input
-                    type="radio"
-                    name="experience"
-                    checked={investmentExperience === 'beginner'}
-                    onChange={() => setInvestmentExperience('beginner')}
-                  />
-                  Beginner
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    name="experience"
-                    checked={investmentExperience === 'intermediate'}
-                    onChange={() => setInvestmentExperience('intermediate')}
-                  />
-                  Intermediate
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    name="experience"
-                    checked={investmentExperience === 'advanced'}
-                    onChange={() => setInvestmentExperience('advanced')}
-                  />
-                  Advanced
-                </label>
-              </fieldset>
-
-              <fieldset>
-                <legend>Preferred horizon</legend>
-                <label>
-                  <input
-                    type="radio"
-                    name="preferred-horizon"
-                    checked={investmentHorizon === 'short'}
-                    onChange={() => setInvestmentHorizon('short')}
-                  />
-                  1-3 months
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    name="preferred-horizon"
-                    checked={investmentHorizon === 'medium'}
-                    onChange={() => setInvestmentHorizon('medium')}
-                  />
-                  3-12 months
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    name="preferred-horizon"
-                    checked={investmentHorizon === 'long'}
-                    onChange={() => setInvestmentHorizon('long')}
-                  />
-                  1+ years
-                </label>
-              </fieldset>
-
-              <fieldset>
-                <legend>Goals (multiple choice)</legend>
-                {INVESTMENT_GOALS.map((goal) => (
-                  <label key={goal.id}>
+          {workspaceTab === 'profile' ? (
+            <div className="profile-panel">
+              <h2>Investor profile assistant</h2>
+              <p className="subtitle">
+                Answer a few questions and get stock ideas with a suggested horizon.
+              </p>
+              <div className="profile-grid">
+                <fieldset>
+                  <legend>Risk tolerance</legend>
+                  <label>
                     <input
-                      type="checkbox"
-                      checked={investmentGoals.includes(goal.id)}
-                      onChange={() => toggleGoal(goal.id)}
+                      type="radio"
+                      name="risk-tolerance"
+                      checked={riskTolerance === 'low'}
+                      onChange={() => setRiskTolerance('low')}
                     />
-                    {goal.label}
+                    Low
                   </label>
-                ))}
-              </fieldset>
-            </div>
+                  <label>
+                    <input
+                      type="radio"
+                      name="risk-tolerance"
+                      checked={riskTolerance === 'medium'}
+                      onChange={() => setRiskTolerance('medium')}
+                    />
+                    Medium
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="risk-tolerance"
+                      checked={riskTolerance === 'high'}
+                      onChange={() => setRiskTolerance('high')}
+                    />
+                    High
+                  </label>
+                </fieldset>
 
-            <p className="status">
-              Estimated profile: <strong>{riskProfile}</strong>
-            </p>
-            {profileLoading ? (
-              <p className="status">Loading company fundamentals for recommendations...</p>
-            ) : null}
+                <fieldset>
+                  <legend>Experience</legend>
+                  <label>
+                    <input
+                      type="radio"
+                      name="experience"
+                      checked={investmentExperience === 'beginner'}
+                      onChange={() => setInvestmentExperience('beginner')}
+                    />
+                    Beginner
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="experience"
+                      checked={investmentExperience === 'intermediate'}
+                      onChange={() => setInvestmentExperience('intermediate')}
+                    />
+                    Intermediate
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="experience"
+                      checked={investmentExperience === 'advanced'}
+                      onChange={() => setInvestmentExperience('advanced')}
+                    />
+                    Advanced
+                  </label>
+                </fieldset>
 
-            {recommendedStocks.length ? (
-              <div className="recommendations">
-                {recommendedStocks.map((stock) => (
-                  <article key={`rec-${stock.symbol}`} className="recommendation-card">
-                    <div className="recommendation-content">
-                      <div className="recommendation-main">
-                        {companyProfiles[stock.symbol]?.dataSource ? (
-                          <p>
-                            Source:{' '}
-                            <span className="source-badge">
-                              {companyProfiles[stock.symbol].dataSource}
+                <fieldset>
+                  <legend>Preferred horizon</legend>
+                  <label>
+                    <input
+                      type="radio"
+                      name="preferred-horizon"
+                      checked={investmentHorizon === 'short'}
+                      onChange={() => setInvestmentHorizon('short')}
+                    />
+                    1-3 months
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="preferred-horizon"
+                      checked={investmentHorizon === 'medium'}
+                      onChange={() => setInvestmentHorizon('medium')}
+                    />
+                    3-12 months
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="preferred-horizon"
+                      checked={investmentHorizon === 'long'}
+                      onChange={() => setInvestmentHorizon('long')}
+                    />
+                    1+ years
+                  </label>
+                </fieldset>
+
+                <fieldset>
+                  <legend>Goals (multiple choice)</legend>
+                  {INVESTMENT_GOALS.map((goal) => (
+                    <label key={goal.id}>
+                      <input
+                        type="checkbox"
+                        checked={investmentGoals.includes(goal.id)}
+                        onChange={() => toggleGoal(goal.id)}
+                      />
+                      {goal.label}
+                    </label>
+                  ))}
+                </fieldset>
+              </div>
+
+              <div className="profile-badge">
+                Estimated profile: {riskProfile}
+              </div>
+
+              {profileLoading ? (
+                <p className="status loading">Loading company fundamentals for recommendations...</p>
+              ) : null}
+
+              {recommendedStocks.length ? (
+                <div className="recommendations">
+                  {recommendedStocks.map((stock) => (
+                    <article key={`rec-${stock.symbol}`} className="recommendation-card">
+                      <div className="recommendation-content">
+                        <div className="recommendation-main">
+                          <h3>
+                            {stock.symbol}{' '}
+                            <small>{cleanCompanyName(stock.name) ?? 'N/A'}</small>
+                          </h3>
+                          <div className="rec-meta">
+                            <span className="rec-meta-item">
+                              Trend: <strong>{stock.trend.label}</strong>
                             </span>
-                          </p>
-                        ) : null}
-                        {companyProfiles[stock.symbol] ? (
-                          <p>
-                            Industry:{' '}
-                            <strong>{companyProfiles[stock.symbol].industry ?? 'Unknown'}</strong>{' '}
-                            | Sector:{' '}
-                            <strong>{companyProfiles[stock.symbol].sector ?? 'Unknown'}</strong>
-                          </p>
-                        ) : null}
-                        {companyProfiles[stock.symbol]?.yearsOperating ? (
-                          <p>
-                            Years operating:{' '}
-                            <strong>{companyProfiles[stock.symbol].yearsOperating}+</strong>
-                          </p>
-                        ) : null}
-                        <h3>
-                          {stock.symbol} <small>{cleanCompanyName(stock.name) ?? 'N/A'}</small>
-                        </h3>
-                        <p>
-                          Trend: <strong>{stock.trend.label}</strong> | Country:{' '}
-                          <strong>{stock.country}</strong>
-                        </p>
-                        <p>
-                          Suggested horizon: <strong>{stock.recommendedHorizon}</strong>
-                        </p>
-                        <p className={metricClass(stock.yearChange)}>
-                          1Y performance: {formatPercent(stock.yearChange)}
+                            <span className="rec-divider" />
+                            <span className="rec-meta-item">
+                              Country: <strong>{stock.country}</strong>
+                            </span>
+                            <span className="rec-divider" />
+                            <span className="rec-meta-item">
+                              Horizon: <strong>{stock.recommendedHorizon}</strong>
+                            </span>
+                            <span className="rec-divider" />
+                            <span className={`rec-meta-item ${metricClass(stock.yearChange)}`}>
+                              1Y: <strong>{formatPercent(stock.yearChange)}</strong>
+                            </span>
+                          </div>
+                          {companyProfiles[stock.symbol] ? (
+                            <div className="rec-meta" style={{ marginTop: '0.25rem' }}>
+                              {companyProfiles[stock.symbol].dataSource ? (
+                                <span className="source-badge">
+                                  {companyProfiles[stock.symbol].dataSource}
+                                </span>
+                              ) : null}
+                              <span className="rec-meta-item">
+                                Industry:{' '}
+                                <strong>
+                                  {companyProfiles[stock.symbol].industry ?? 'Unknown'}
+                                </strong>
+                              </span>
+                              <span className="rec-divider" />
+                              <span className="rec-meta-item">
+                                Sector:{' '}
+                                <strong>
+                                  {companyProfiles[stock.symbol].sector ?? 'Unknown'}
+                                </strong>
+                              </span>
+                              {companyProfiles[stock.symbol].yearsOperating ? (
+                                <>
+                                  <span className="rec-divider" />
+                                  <span className="rec-meta-item">
+                                    Years:{' '}
+                                    <strong>
+                                      {companyProfiles[stock.symbol].yearsOperating}+
+                                    </strong>
+                                  </span>
+                                </>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                        <p className="recommendation-note">
+                          {stockInsight(stock, companyProfiles[stock.symbol])}
                         </p>
                       </div>
-                      <p className="recommendation-note">
-                        {stockInsight(stock, companyProfiles[stock.symbol])}
-                      </p>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p className="status">No recommendations yet. Load stock data first.</p>
-            )}
-          </div>
-        ) : (
-          <div className="table-panel">
-            <table>
-              <thead>
-                <tr>
-                  <th className="col-ticker">Ticker</th>
-                  <th className="col-name">Name</th>
-                  <th className="col-exchange">Exchange</th>
-                  <th className="col-price">Price</th>
-                  <th className="col-metric">1D</th>
-                  <th className="col-metric">1M</th>
-                  <th className="col-metric">1Y</th>
-                  <th className="col-trend">Trend signal</th>
-                  <th className="col-date">Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pagedStocks.map((stock) => (
-                  <tr key={stock.symbol}>
-                    <td className="col-ticker">{stock.symbol}</td>
-                    <td
-                      className="cell-name col-name"
-                      title={cleanCompanyName(stock.name) ?? 'N/A'}
-                    >
-                      {cleanCompanyName(stock.name) ?? 'N/A'}
-                    </td>
-                    <td className="col-exchange" title={stock.exchange ?? 'N/A'}>
-                      {stock.exchange ?? 'N/A'}
-                    </td>
-                    <td className="col-price">${stock.price.toFixed(2)}</td>
-                    <td className={`col-metric ${metricClass(stock.dayChange)}`}>
-                      {formatPercent(stock.dayChange)}
-                    </td>
-                    <td className={`col-metric ${metricClass(stock.monthChange)}`}>
-                      {formatPercent(stock.monthChange)}
-                    </td>
-                    <td className={`col-metric ${metricClass(stock.yearChange)}`}>
-                      {formatPercent(stock.yearChange)}
-                    </td>
-                    <td
-                      className="col-trend"
-                      title={trendTooltip(stock.trend.label, stock.trend.detail)}
-                    >
-                      <span className={`trend-chip ${stock.trend.tone}`}>
-                        {stock.trend.label}
-                      </span>
-                    </td>
-                    <td className="col-date">{stock.updatedAt}</td>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <p>No recommendations yet. Load stock data first.</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="table-panel">
+              <table>
+                <thead>
+                  <tr>
+                    <th className="col-ticker">Ticker</th>
+                    <th className="col-name">Name</th>
+                    <th className="col-exchange">Exchange</th>
+                    <th className="col-price">Price</th>
+                    <th className="col-metric">1D</th>
+                    <th className="col-metric">1M</th>
+                    <th className="col-metric">1Y</th>
+                    <th className="col-trend">Trend Signal</th>
+                    <th className="col-date">Updated</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {pagedStocks.map((stock) => (
+                    <tr key={stock.symbol}>
+                      <td className="col-ticker">{stock.symbol}</td>
+                      <td
+                        className="cell-name col-name"
+                        title={cleanCompanyName(stock.name) ?? 'N/A'}
+                      >
+                        {cleanCompanyName(stock.name) ?? 'N/A'}
+                      </td>
+                      <td className="col-exchange" title={stock.exchange ?? 'N/A'}>
+                        {stock.exchange ?? 'N/A'}
+                      </td>
+                      <td className="col-price">${stock.price.toFixed(2)}</td>
+                      <td className={`col-metric ${metricClass(stock.dayChange)}`}>
+                        {formatPercent(stock.dayChange)}
+                      </td>
+                      <td className={`col-metric ${metricClass(stock.monthChange)}`}>
+                        {formatPercent(stock.monthChange)}
+                      </td>
+                      <td className={`col-metric ${metricClass(stock.yearChange)}`}>
+                        {formatPercent(stock.yearChange)}
+                      </td>
+                      <td
+                        className="col-trend"
+                        title={trendTooltip(stock.trend.label, stock.trend.detail)}
+                      >
+                        <span className={`trend-chip ${stock.trend.tone}`}>
+                          {stock.trend.label}
+                        </span>
+                      </td>
+                      <td className="col-date">{stock.updatedAt}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
 
-            {!loading && !pagedStocks.length && !error ? (
-              <p className="status">No data to display.</p>
-            ) : null}
-            {mode === 'universe' &&
-            loading &&
-            (trendFilter !== 'all' || countryFilter !== 'all') &&
-            !pagedStocks.length &&
-            sortedStocks.length > 0 ? (
-              <p className="status warning">
-                No matching stocks yet with current filters ({trendFilter} /{' '}
-                {countryFilter}). Try "All" or wait until loading finishes.
-              </p>
-            ) : null}
-          </div>
-        )}
-      </section>
-    </main>
+              {!loading && !pagedStocks.length && !error ? (
+                <div className="empty-state">
+                  <p>No data to display.</p>
+                </div>
+              ) : null}
+              {mode === 'universe' &&
+              loading &&
+              (trendFilter !== 'all' || countryFilter !== 'all') &&
+              !pagedStocks.length &&
+              sortedStocks.length > 0 ? (
+                <p className="status warning">
+                  No matching stocks yet with current filters ({trendFilter} /{' '}
+                  {countryFilter}). Try &quot;All&quot; or wait until loading finishes.
+                </p>
+              ) : null}
+            </div>
+          )}
+        </section>
+      </main>
+    </>
   )
 }
 
