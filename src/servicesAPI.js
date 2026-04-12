@@ -1,6 +1,11 @@
 /** En producción (GitHub Pages), apunta al backend desplegado; en local déjalo vacío y usa el proxy de Vite. */
 const API_ORIGIN = (import.meta.env.VITE_API_ORIGIN ?? '').replace(/\/$/, '')
 
+/** True si el build embebió VITE_API_ORIGIN (necesario en GitHub Pages). */
+export function hasApiOriginConfigured() {
+  return Boolean(API_ORIGIN)
+}
+
 export const apiUrl = (path) => {
     const normalized = path.startsWith('/') ? path : `/${path}`
     return API_ORIGIN ? `${API_ORIGIN}${normalized}` : normalized

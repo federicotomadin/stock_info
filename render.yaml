@@ -1,0 +1,17 @@
+# Blueprint para Render: https://render.com/docs/blueprint-spec
+# En el dashboard: New → Blueprint → conecta este repo y despliega.
+# Luego copia la URL pública (https://xxx.onrender.com) y úsala en GitHub como VITE_API_ORIGIN.
+
+services:
+  - type: web
+    name: stock-info-api
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm run server
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Opcional: mejora perfiles de empresa (https://finnhub.io/)
+      - key: FINNHUB_API_KEY
+        sync: false

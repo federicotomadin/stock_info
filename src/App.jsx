@@ -8,7 +8,7 @@ import {
 import {cleanCompanyName, formatPercent, metricClass, numberOrFallback, parseSymbols, trendTooltip} from "./utlils.js";
 import {horizonByTrendLabel, recommendationScore} from "./analyzer.js";
 import {stockInsight} from "./riskProfile.js";
-import {apiEndpoint, apiUrl} from "./servicesAPI.js";
+import {apiEndpoint, apiUrl, hasApiOriginConfigured} from "./servicesAPI.js";
 
 
 export const PAGE_SIZE = 20
@@ -357,7 +357,12 @@ function App() {
 
     try {
       const response = await fetch(apiUrl('/api/universe'))
-      const payload = await response.json()
+      let payload = {}
+      try {
+        payload = await response.json()
+      } catch {
+        payload = {}
+      }
 
       if (!response.ok) {
         setUniverseError(payload.error ?? 'Could not load the market universe.')
@@ -366,7 +371,11 @@ function App() {
 
       setMarketUniverse(payload.data ?? [])
     } catch {
-      setUniverseError('Could not download the full stock list.')
+      setUniverseError(
+        import.meta.env.PROD && !hasApiOriginConfigured()
+          ? 'No API URL in this build. Add repository secret or variable VITE_API_ORIGIN (your backend https URL, no trailing slash) and run the Deploy workflow again.'
+          : 'Could not download the full stock list.'
+      )
     } finally {
       setUniverseLoading(false)
     }
@@ -413,7 +422,9 @@ function App() {
       } catch {
         setStocks([])
         setError(
-          'Could not connect to local server. Run npm run dev to start frontend and API.'
+          import.meta.env.PROD && !hasApiOriginConfigured()
+            ? 'No API URL in this build. Set VITE_API_ORIGIN (https backend URL) in GitHub and redeploy.'
+            : 'Could not connect to local server. Run npm run dev to start frontend and API.'
         )
       } finally {
         setLoading(false)
@@ -526,7 +537,9 @@ function App() {
       setStocks([])
       setUniverseProgress({ completed: 0, total: symbolBatches.length })
       setError(
-        'Could not connect to local server. Run npm run dev to start frontend and API.'
+        import.meta.env.PROD && !hasApiOriginConfigured()
+          ? 'No API URL in this build. Set VITE_API_ORIGIN (https backend URL) in GitHub and redeploy.'
+          : 'Could not connect to local server. Run npm run dev to start frontend and API.'
       )
     } finally {
       if (universeRequestIdRef.current === requestId) {

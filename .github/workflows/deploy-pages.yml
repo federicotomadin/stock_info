@@ -1,7 +1,7 @@
 # Despliega el frontend (carpeta dist) a GitHub Pages.
 # Requisitos en el repo: Settings → Pages → Source = GitHub Actions.
 # El API Express no corre en Pages: despliega el servidor en otro servicio y
-# define el secreto VITE_API_ORIGIN con la URL base (sin barra final), p. ej. https://tu-api.onrender.com
+# define VITE_API_ORIGIN (secret o variable del repo) con la URL base (https, sin barra final), p. ej. https://tu-api.onrender.com
 
 name: Deploy to GitHub Pages
 
@@ -34,7 +34,8 @@ jobs:
           # Por defecto: /nombre-repo/. Para sitio en la raíz (repo usuario.github.io),
           # crea la variable del repositorio VITE_BASE_PATH con valor /
           VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH || format('/{0}/', github.event.repository.name) }}
-          VITE_API_ORIGIN: ${{ secrets.VITE_API_ORIGIN }}
+          # Secret o variable; la URL debe ser https (Pages bloquea API http por mixed content).
+          VITE_API_ORIGIN: ${{ secrets.VITE_API_ORIGIN || vars.VITE_API_ORIGIN }}
         run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
