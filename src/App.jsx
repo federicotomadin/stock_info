@@ -1,146 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
-
-const DEFAULT_SYMBOLS = ['AAPL', 'MSFT', 'NVDA', 'AMZN', 'TSLA']
-const PAGE_SIZE = 20
-const MAX_SYMBOLS = 120
-const BATCH_CONCURRENCY = 3
-
-const SORT_OPTIONS = [
-  { id: 'trend', label: 'Trend' },
-  { id: 'day', label: '1D' },
-  { id: 'month', label: '1M' },
-  { id: 'year', label: '1Y' },
-]
-const TREND_LABELS = [
-  'Early breakout',
-  'Reversal',
-  'Momentum',
-  'Pullback bounce',
-  'Downtrend',
-  'Neutral',
-]
-const COUNTRY_LABELS = [
-  'Argentina',
-  'EE.UU',
-  'Europa',
-  'China',
-  'Reino Unido',
-  'Canada',
-  'Francia',
-  'Brasil',
-  'India',
-  'Japon',
-  'Taiwan',
-]
-const INVESTMENT_GOALS = [
-  { id: 'growth', label: 'Growth' },
-  { id: 'dividends', label: 'Dividends' },
-  { id: 'stability', label: 'Stability' },
-  { id: 'value', label: 'Value opportunities' },
-]
-const COUNTRY_SYMBOL_OVERRIDES = {
-  MELI: 'Argentina',
-  GLOB: 'Argentina',
-  CRESY: 'Argentina',
-  YPF: 'Argentina',
-  TS: 'Europa',
-  SHEL: 'Europa',
-  NVO: 'Europa',
-  TTE: 'Europa',
-  BABA: 'China',
-  BIDU: 'China',
-  JD: 'China',
-  PDD: 'China',
-  TSM: 'Taiwan',
-  BTI: 'Reino Unido',
-  AZN: 'Reino Unido',
-  HSBC: 'Reino Unido',
-  LYG: 'Reino Unido',
-  SHOP: 'Canada',
-  RY: 'Canada',
-  TD: 'Canada',
-  BMO: 'Canada',
-  ENB: 'Canada',
-  CNI: 'Canada',
-  CNQ: 'Canada',
-  SU: 'Canada',
-  TRP: 'Canada',
-  BCE: 'Canada',
-  TU: 'Canada',
-  AEM: 'Canada',
-  WCN: 'Canada',
-  CP: 'Canada',
-  CNR: 'Canada',
-  EQNR: 'Europa',
-  ERJ: 'Brasil',
-  VALE: 'Brasil',
-  ITUB: 'Brasil',
-  NU: 'Brasil',
-  HDB: 'India',
-  IBN: 'India',
-  INFY: 'India',
-  WIT: 'India',
-  NTDOY: 'Japon',
-  SONY: 'Japon',
-  TM: 'Japon',
-  HMC: 'Japon',
+import {
+  COUNTRY_LABELS, COUNTRY_SYMBOL_OVERRIDES,
+  DEFAULT_SYMBOLS, INVESTMENT_GOALS, SORT_OPTIONS, TREND_LABELS, TREND_MEANINGS
 }
-const TREND_MEANINGS = {
-  'Early breakout':
-    'Strong daily move with low monthly/yearly extension. Possible early-stage run.',
-  Reversal:
-    'Short-term momentum turning positive after weak long-term performance.',
-  Momentum:
-    'Positive day/month/year trend that still appears active.',
-  'Pullback bounce':
-    'Price bouncing in the short term during a broader monthly pullback.',
-  Downtrend:
-    'Negative direction across day, month, and year windows.',
-  Neutral:
-    'No clear directional edge from current day/month/year signals.',
-}
+  from "./models/constants.js";
+import {cleanCompanyName, formatPercent, metricClass, numberOrFallback, parseSymbols, trendTooltip} from "./utlils.js";
+import {horizonByTrendLabel, recommendationScore} from "./analyzer.js";
+import {stockInsight} from "./riskProfile.js";
+import {apiEndpoint, apiUrl} from "./servicesAPI.js";
 
-function parseSymbols(rawInput) {
-  const parsed = rawInput
-    .split(',')
-    .map((symbol) => symbol.trim().toUpperCase())
-    .filter(Boolean)
 
-  return Array.from(new Set(parsed)).slice(0, MAX_SYMBOLS)
-}
+export const PAGE_SIZE = 20
+export const MAX_SYMBOLS = 120
+export const BATCH_CONCURRENCY = 3
 
-function formatPercent(value) {
-  if (value === null || Number.isNaN(value)) {
-    return 'N/A'
-  }
-
-  return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
-}
-
-function metricClass(value) {
-  if (value === null || Number.isNaN(value)) {
-    return ''
-  }
-
-  if (value > 0) {
-    return 'positive'
-  }
-
-  if (value < 0) {
-    return 'negative'
-  }
-
-  return 'neutral'
-}
-
-function numberOrFallback(value, fallback = 0) {
-  if (value === null || Number.isNaN(value)) {
-    return fallback
-  }
-
-  return value
-}
 
 function analyzeTrend(stock) {
   const day = numberOrFallback(stock.dayChange, -100)
@@ -183,20 +57,6 @@ function analyzeTrend(stock) {
   return { score, label, tone, detail }
 }
 
-function trendTooltip(label, detail) {
-  return `${label}: ${TREND_MEANINGS[label] ?? detail}`
-}
-
-function cleanCompanyName(name) {
-  if (!name) {
-    return null
-  }
-
-  return name
-    .replace(/\s*-\s*Common Stock$/i, '')
-    .replace(/\s*Common Stock$/i, '')
-    .trim()
-}
 
 function detectCountry(stock) {
   const symbol = (stock.symbol ?? '').toUpperCase()
@@ -267,268 +127,6 @@ function detectCountry(stock) {
   return 'EE.UU'
 }
 
-function horizonByTrendLabel(label, profile) {
-  if (label === 'Early breakout' || label === 'Reversal') {
-    return profile === 'Aggressive' ? '1-3 months' : '3-6 months'
-  }
-  if (label === 'Momentum') {
-    return profile === 'Conservative' ? '6-12 months' : '3-9 months'
-  }
-  if (label === 'Pullback bounce') {
-    return profile === 'Conservative' ? '3-6 months' : '1-3 months'
-  }
-  if (label === 'Neutral') {
-    return '6-12 months'
-  }
-  return 'Watchlist (avoid entry for now)'
-}
-
-function recommendationScore(stock, profile, goals) {
-  const day = numberOrFallback(stock.dayChange, -100)
-  const month = numberOrFallback(stock.monthChange, -100)
-  const year = numberOrFallback(stock.yearChange, -100)
-  const trendScore = stock.trend?.score ?? 0
-  const trendLabel = stock.trend?.label ?? 'Neutral'
-
-  let score = trendScore
-
-  if (profile === 'Conservative') {
-    score += month * 0.6 + year * 0.8 - Math.abs(day) * 0.5
-    if (trendLabel === 'Downtrend') score -= 12
-    if (trendLabel === 'Momentum') score += 4
-  } else if (profile === 'Aggressive') {
-    score += day * 1.2 + month * 0.45 + year * 0.2
-    if (trendLabel === 'Early breakout' || trendLabel === 'Reversal') score += 6
-    if (trendLabel === 'Downtrend') score -= 6
-  } else {
-    score += day * 0.55 + month * 0.65 + year * 0.45
-    if (trendLabel === 'Momentum' || trendLabel === 'Reversal') score += 3
-  }
-
-  if (goals.includes('dividends')) {
-    score += year > 0 ? 3 : -2
-    score -= Math.abs(day) * 0.25
-  }
-  if (goals.includes('stability')) {
-    score -= Math.abs(day) * 0.4
-    score += month > 0 ? 2 : -1
-  }
-  if (goals.includes('growth')) {
-    score += month * 0.35 + year * 0.35
-  }
-  if (goals.includes('value')) {
-    if (trendLabel === 'Reversal' || trendLabel === 'Pullback bounce') {
-      score += 4
-    }
-  }
-
-  return score
-}
-
-function shortSummary(summary, maxLength = 220) {
-  if (!summary) {
-    return null
-  }
-
-  const cleaned = summary.replace(/\s+/g, ' ').trim()
-  if (cleaned.length <= maxLength) {
-    return cleaned
-  }
-
-  return `${cleaned.slice(0, maxLength - 3)}...`
-}
-
-function detectSectorHint(stock) {
-  const text = `${stock.symbol ?? ''} ${stock.name ?? ''}`.toUpperCase()
-
-  const has = (tokens) => tokens.some((token) => text.includes(token))
-
-  if (
-    has([
-      'SEMI',
-      'SEMICONDUCTOR',
-      'MICRO',
-      'CHIP',
-      'NVIDIA',
-      'AMD',
-      'INTEL',
-      'TSM',
-      'QUALCOMM',
-      'BROADCOM',
-    ])
-  ) {
-    return {
-      sector: 'Semiconductors',
-      sentence:
-        'It is exposed to semiconductor demand cycles, where execution and product timing can change momentum quickly.',
-    }
-  }
-
-  if (
-    has([
-      'BANK',
-      'FINANCIAL',
-      'PAY',
-      'PAYMENT',
-      'CAPITAL',
-      'CARD',
-      'FINTECH',
-      'INSURANCE',
-      'BROKER',
-      'MERCADOLIBRE',
-      'NU HOLDINGS',
-      'SOFI',
-    ])
-  ) {
-    return {
-      sector: 'Financials / Fintech',
-      sentence:
-        'It operates in financial services where rate cycles, credit quality, and transaction growth are key drivers.',
-    }
-  }
-
-  if (
-    has([
-      'OIL',
-      'GAS',
-      'ENERGY',
-      'PETROLEUM',
-      'PIPELINE',
-      'SOLAR',
-      'POWER',
-      'ELECTRIC',
-      'RENEWABLE',
-      'EXXON',
-      'CHEVRON',
-    ])
-  ) {
-    return {
-      sector: 'Energy',
-      sentence:
-        'It is tied to commodity and energy-cycle dynamics, which can create strong trends but also sharp reversals.',
-    }
-  }
-
-  if (
-    has([
-      'PHARMA',
-      'THERAPEUT',
-      'BIOTECH',
-      'BIO',
-      'HEALTH',
-      'MEDICAL',
-      'DIAGNOSTIC',
-      'LAB',
-      'PFIZER',
-      'NOVARTIS',
-      'MERCK',
-    ])
-  ) {
-    return {
-      sector: 'Healthcare',
-      sentence:
-        'It sits in healthcare, where pipeline execution, approvals, and reimbursement trends can materially impact valuation.',
-    }
-  }
-
-  if (
-    has([
-      'SOFTWARE',
-      'CLOUD',
-      'DATA',
-      'CYBER',
-      'AI',
-      'COMPUTING',
-      'INTERNET',
-      'PLATFORM',
-      'SAAS',
-      'MICROSOFT',
-      'ALPHABET',
-      'AMAZON',
-    ])
-  ) {
-    return {
-      sector: 'Technology / Software',
-      sentence:
-        'It has technology exposure where product velocity, platform adoption, and margin expansion are central to long-term upside.',
-    }
-  }
-
-  if (
-    has([
-      'AUTO',
-      'MOTOR',
-      'AEROSPACE',
-      'AIRLINES',
-      'ALUMINUM',
-      'STEEL',
-      'MACHINERY',
-      'LOGISTICS',
-      'RAIL',
-      'INDUSTRIAL',
-    ])
-  ) {
-    return {
-      sector: 'Industrials',
-      sentence:
-        'It belongs to an industrial value chain where demand, utilization, and cost control usually shape earnings quality.',
-    }
-  }
-
-  if (
-    has([
-      'RETAIL',
-      'CONSUMER',
-      'FOOD',
-      'BEVERAGE',
-      'APPAREL',
-      'HOTEL',
-      'TRAVEL',
-      'RESTAURANT',
-      'E-COMMERCE',
-    ])
-  ) {
-    return {
-      sector: 'Consumer',
-      sentence:
-        'It is driven by consumer demand trends, pricing power, and operating efficiency through the cycle.',
-    }
-  }
-
-  return {
-    sector: 'Diversified business',
-    sentence:
-      'It has broad business exposure, so trend confirmation and risk controls are especially important before entry.',
-  }
-}
-
-function stockInsight(stock, profile) {
-  const company = cleanCompanyName(stock.name) ?? stock.symbol
-  const exchange = stock.exchange ?? 'N/A'
-  const trend = stock.trend?.label ?? 'Neutral'
-
-  if (profile) {
-    const sector = profile.sector ?? 'Unknown sector'
-    const industry = profile.industry ?? 'Unknown industry'
-    const yearsText = profile.yearsOperating
-      ? `${profile.yearsOperating}+ years of operations`
-      : 'operating history not publicly clear'
-    const yearsContext =
-      profile.yearsSource === 'founded'
-        ? ` (estimated from founding year ${profile.foundedYear})`
-        : profile.yearsSource === 'listed'
-          ? ` (estimated from listing year ${profile.listedYear})`
-          : ''
-    const summaryLine =
-      shortSummary(profile.businessSummary) ??
-      'Public business summary is currently limited from the selected data source.'
-
-    return `${company} (${exchange}: ${stock.symbol}) operates in ${industry} within the ${sector} sector, with approximately ${yearsText}${yearsContext}. ${summaryLine} Current signal is ${trend.toLowerCase()}, with a suggested horizon of ${stock.recommendedHorizon}.`
-  }
-
-  const sectorHint = detectSectorHint(stock)
-  return `${company} (${exchange}: ${stock.symbol}) is a real operating business in the ${sectorHint.sector} space. ${sectorHint.sentence} Current signal is ${trend.toLowerCase()}, with a suggested horizon of ${stock.recommendedHorizon}.`
-}
 
 function App() {
   const [symbolsInput, setSymbolsInput] = useState(DEFAULT_SYMBOLS.join(', '))
@@ -695,7 +293,7 @@ function App() {
     profileRequestIdRef.current = requestId
     setProfileLoading(true)
 
-    const endpoint = new URL('/api/company-profiles', window.location.origin)
+    const endpoint = apiEndpoint('/api/company-profiles')
     endpoint.searchParams.set('symbols', symbols.join(','))
 
     void fetch(endpoint)
@@ -758,7 +356,7 @@ function App() {
     setUniverseError('')
 
     try {
-      const response = await fetch('/api/universe')
+      const response = await fetch(apiUrl('/api/universe'))
       const payload = await response.json()
 
       if (!response.ok) {
@@ -788,7 +386,7 @@ function App() {
       setError('')
       setWarning('')
       try {
-        const endpoint = new URL('/api/stocks', window.location.origin)
+        const endpoint = apiEndpoint('/api/stocks')
         endpoint.searchParams.set('symbols', symbols.join(','))
         const response = await fetch(endpoint)
         const payload = await response.json()
@@ -865,7 +463,7 @@ function App() {
           nextBatchIndex += 1
 
           try {
-            const endpoint = new URL('/api/stocks', window.location.origin)
+            const endpoint = apiEndpoint('/api/stocks')
             endpoint.searchParams.set('symbols', batch.join(','))
 
             const response = await fetch(endpoint)
