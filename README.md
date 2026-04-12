@@ -36,3 +36,4 @@ y configura `FINNHUB_API_KEY` con una key gratuita de [Finnhub](https://finnhub.
 - Para precio y variaciones, consulta historicos de [Stooq](https://stooq.com/) y calcula `1D`, `1M` y `1Y`.
 - Para perfil corporativo, usa Finnhub como fuente primaria (si hay API key) con fallback a Yahoo/Wikipedia/Wikidata.
 - En modo manual se permiten hasta 120 tickers por consulta.
+- 

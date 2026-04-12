@@ -1,8 +1,13 @@
+/**
+ * URL pública del backend en producción (Render). Si cambias de servicio, actualiza aquí
+ * o define VITE_API_ORIGIN en el build (GitHub Actions / .env local).
+ */
+const HARDCODED_PRODUCTION_API_ORIGIN =
+  'https://stock-info-api-ag2h.onrender.com'
 
 /**
- * URL del backend en producción.
- * 1) VITE_API_ORIGIN (build / GitHub Actions) tiene prioridad.
- * 2) Si falta, en producción se usa src/deploy-api.json (fallback para GitHub Pages).
+ * 1) VITE_API_ORIGIN tiene prioridad (secret de GitHub, etc.).
+ * 2) En producción, si falta, se usa la constante de arriba.
  * En desarrollo, sin env: rutas relativas /api → proxy de Vite.
  */
 function resolveApiOrigin() {
@@ -10,12 +15,15 @@ function resolveApiOrigin() {
   if (fromEnv) {
     return fromEnv
   }
+  if (import.meta.env.PROD) {
+    return HARDCODED_PRODUCTION_API_ORIGIN.replace(/\/$/, '')
+  }
   return ''
 }
 
 const API_ORIGIN = resolveApiOrigin()
 
-/** True si hay URL de API (env, o deploy-api.json en producción). */
+/** True si hay URL de API. */
 export function hasApiOriginConfigured() {
   return Boolean(API_ORIGIN)
 }

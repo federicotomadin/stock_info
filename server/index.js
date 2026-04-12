@@ -1052,6 +1052,14 @@ async function fetchMarketUniverse() {
   return merged
 }
 
+app.get('/', (_req, res) => {
+  res.json({
+    service: 'stock-info-api',
+    ok: true,
+    message: 'API is running. Use /api/health, /api/universe, /api/stocks, /api/company-profiles',
+  })
+})
+
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true })
 })
