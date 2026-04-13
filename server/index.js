@@ -11,6 +11,10 @@ const FETCH_RETRIES = 2
 const CACHE_TTL_MS = 5 * 60 * 1000
 const PROFILE_CACHE_TTL_MS = 12 * 60 * 60 * 1000
 const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY?.trim()
+const FMP_API_KEY = process.env.FMP_API_KEY?.trim()
+const FMP_BASE = 'https://financialmodelingprep.com/api/v3'
+const FMP_FUNDAMENTALS_CACHE_TTL_MS = 60 * 60 * 1000
+const fmpFundamentalsCache = new Map()
 /** Curated fundamentals when public APIs resolve the wrong Wikipedia/Wikidata entity. */
 const PROFILE_SYMBOL_OVERRIDES = {
   AXTI: {
@@ -332,6 +336,117 @@ function inferSectorIndustry(text = '') {
   return { sector: null, industry: null }
 }
 
+function unwrapFmpFirstRow(payload) {
+  if (Array.isArray(payload) && payload.length) {
+    return payload[0]
+  }
+  return null
+}
+
+function normalizeFmpDcf(payload) {
+  if (Array.isArray(payload) && payload.length) {
+    return payload[0]
+  }
+  if (payload && typeof payload === 'object' && Object.keys(payload).length) {
+    return payload
+  }
+  return null
+}
+
+async function fetchFmpJson(relPath) {
+  if (!FMP_API_KEY) {
+    throw new Error('FMP_API_KEY is not configured')
+  }
+
+  const url = `${FMP_BASE}${relPath}${relPath.includes('?') ? '&' : '?'}apikey=${encodeURIComponent(FMP_API_KEY)}`
+  const response = await fetchWithTimeout(
+    url,
+    {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'stock-info-local-app/1.0',
+      },
+    },
+    20000
+  )
+
+  const text = await response.text()
+  let payload
+  try {
+    payload = JSON.parse(text)
+  } catch {
+    throw new Error(`FMP returned non-JSON (HTTP ${response.status})`)
+  }
+
+  if (!response.ok) {
+    const message =
+      payload?.['Error Message'] ?? payload?.message ?? `FMP HTTP ${response.status}`
+    throw new Error(message)
+  }
+
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    !Array.isArray(payload) &&
+    payload['Error Message']
+  ) {
+    throw new Error(payload['Error Message'])
+  }
+
+  return payload
+}
+
+async function fetchFmpFundamentalsBundle(symbol) {
+  const upper = symbol.toUpperCase()
+  const paths = {
+    profile: `/profile/${encodeURIComponent(upper)}`,
+    keyMetricsTtm: `/key-metrics-ttm/${encodeURIComponent(upper)}`,
+    ratiosTtm: `/ratios-ttm/${encodeURIComponent(upper)}`,
+    incomeStatement: `/income-statement/${encodeURIComponent(upper)}?limit=5`,
+    balanceSheet: `/balance-sheet-statement/${encodeURIComponent(upper)}?limit=5`,
+    cashFlow: `/cash-flow-statement/${encodeURIComponent(upper)}?limit=5`,
+    dcf: `/discounted-cash-flow/${encodeURIComponent(upper)}`,
+  }
+
+  const settled = await Promise.all(
+    Object.entries(paths).map(async ([key, path]) => {
+      try {
+        const data = await fetchFmpJson(path)
+        return [key, { ok: true, data }]
+      } catch (error) {
+        return [key, { ok: false, error: error?.message ?? String(error) }]
+      }
+    })
+  )
+
+  const map = Object.fromEntries(settled)
+
+  return {
+    symbol: upper,
+    dataSource: 'financialmodelingprep.com',
+    profile: map.profile?.ok ? unwrapFmpFirstRow(map.profile.data) : null,
+    profileError: map.profile?.ok ? null : map.profile?.error,
+    keyMetricsTtm: map.keyMetricsTtm?.ok ? unwrapFmpFirstRow(map.keyMetricsTtm.data) : null,
+    keyMetricsTtmError: map.keyMetricsTtm?.ok ? null : map.keyMetricsTtm?.error,
+    ratiosTtm: map.ratiosTtm?.ok ? unwrapFmpFirstRow(map.ratiosTtm.data) : null,
+    ratiosTtmError: map.ratiosTtm?.ok ? null : map.ratiosTtm?.error,
+    incomeStatementAnnual: map.incomeStatement?.ok && Array.isArray(map.incomeStatement.data)
+      ? map.incomeStatement.data
+      : [],
+    incomeStatementError: map.incomeStatement?.ok ? null : map.incomeStatement?.error,
+    balanceSheetAnnual: map.balanceSheet?.ok && Array.isArray(map.balanceSheet.data)
+      ? map.balanceSheet.data
+      : [],
+    balanceSheetError: map.balanceSheet?.ok ? null : map.balanceSheet?.error,
+    cashFlowAnnual: map.cashFlow?.ok && Array.isArray(map.cashFlow.data)
+      ? map.cashFlow.data
+      : [],
+    cashFlowError: map.cashFlow?.ok ? null : map.cashFlow?.error,
+    discountedCashFlow: map.dcf?.ok ? normalizeFmpDcf(map.dcf.data) : null,
+    discountedCashFlowError: map.dcf?.ok ? null : map.dcf?.error,
+  }
+}
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
@@ -407,13 +522,12 @@ function buildStockFromCsv(symbol, csv) {
   }
 }
 
-function buildStockFromYahoo(symbol, payload) {
-  const result = payload?.chart?.result?.[0]
-  const closes = result?.indicators?.quote?.[0]?.close
-  const timestamps = result?.timestamp
-
-  if (!Array.isArray(closes) || !Array.isArray(timestamps) || !closes.length) {
-    throw new Error(`Could not parse Yahoo payload for ${symbol}.`)
+/**
+ * Daily closes in chronological order (oldest → newest). Null/NaN entries are allowed between valid closes.
+ */
+function buildStockFromSortedDailyCloses(symbol, closes, updatedAtRaw) {
+  if (!Array.isArray(closes) || !closes.length) {
+    throw new Error(`Not enough historical data for ${symbol}.`)
   }
 
   const latestIndex = closes.findLastIndex((value) => Number.isFinite(value))
@@ -435,14 +549,65 @@ function buildStockFromYahoo(symbol, payload) {
     throw new Error(`Not enough historical data for ${symbol}.`)
   }
 
+  let updatedAt = ''
+  if (updatedAtRaw != null) {
+    updatedAt = String(updatedAtRaw).slice(0, 10)
+  }
+
   return {
     symbol,
     price: latestClose,
-    updatedAt: formatIsoDateFromUnix(timestamps[latestIndex]),
+    updatedAt,
     dayChange: toPercent(latestClose, previousClose),
     monthChange: toPercent(latestClose, monthClose),
     yearChange: toPercent(latestClose, yearClose),
   }
+}
+
+function buildStockFromYahoo(symbol, payload) {
+  const result = payload?.chart?.result?.[0]
+  const closes = result?.indicators?.quote?.[0]?.close
+  const timestamps = result?.timestamp
+
+  if (!Array.isArray(closes) || !Array.isArray(timestamps) || !closes.length) {
+    throw new Error(`Could not parse Yahoo payload for ${symbol}.`)
+  }
+
+  const latestIndex = closes.findLastIndex((value) => Number.isFinite(value))
+  if (latestIndex < 1) {
+    throw new Error(`Not enough historical data for ${symbol}.`)
+  }
+
+  return buildStockFromSortedDailyCloses(
+    symbol,
+    closes,
+    formatIsoDateFromUnix(timestamps[latestIndex])
+  )
+}
+
+async function fetchSymbolDataFromFmp(symbol) {
+  if (!FMP_API_KEY) {
+    throw new Error('FMP_API_KEY is not configured')
+  }
+
+  const upper = symbol.toUpperCase()
+  const twoYearsAgo = new Date()
+  twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2)
+  const from = twoYearsAgo.toISOString().slice(0, 10)
+  const path = `/historical-price-full/${encodeURIComponent(upper)}?from=${from}`
+
+  const payload = await withRetries(async () => fetchFmpJson(path), 1)
+  const rows = payload?.historical
+
+  if (!Array.isArray(rows) || rows.length < 3) {
+    throw new Error(`FMP returned insufficient rows for ${symbol}`)
+  }
+
+  const sorted = [...rows].sort((a, b) => String(a.date).localeCompare(String(b.date)))
+  const closes = sorted.map((row) => Number(row.close ?? row.adjClose))
+  const latestRow = sorted[sorted.length - 1]
+
+  return buildStockFromSortedDailyCloses(symbol, closes, latestRow?.date)
 }
 
 async function fetchSymbolDataFromYahoo(symbol) {
@@ -864,6 +1029,17 @@ async function fetchSymbolData(symbol) {
   const stooqAvailable = Date.now() >= stooqDisabledUntil
   let value
 
+  async function fmpThenYahoo() {
+    if (FMP_API_KEY) {
+      try {
+        return await fetchSymbolDataFromFmp(symbol)
+      } catch {
+        // Yahoo is often rate-limited (HTTP 429); FMP is the preferred fallback when configured.
+      }
+    }
+    return fetchSymbolDataFromYahoo(symbol)
+  }
+
   if (stooqAvailable) {
     try {
       value = await withRetries(async () => {
@@ -888,10 +1064,10 @@ async function fetchSymbolData(symbol) {
         stooqDisabledUntil = Date.now() + 30 * 60 * 1000
       }
 
-      value = await fetchSymbolDataFromYahoo(symbol)
+      value = await fmpThenYahoo()
     }
   } else {
-    value = await fetchSymbolDataFromYahoo(symbol)
+    value = await fmpThenYahoo()
   }
 
   symbolCache.set(symbol, { value, savedAt: Date.now() })
@@ -1056,7 +1232,8 @@ app.get('/', (_req, res) => {
   res.json({
     service: 'stock-info-api',
     ok: true,
-    message: 'API is running. Use /api/health, /api/universe, /api/stocks, /api/company-profiles',
+    message:
+      'API is running. Use /api/health, /api/universe, /api/stocks, /api/company-profiles, /api/fmp/fundamentals',
   })
 })
 
@@ -1101,6 +1278,42 @@ app.get('/api/universe', async (_req, res) => {
       error:
         error?.message ??
         'Could not load stock universe at the moment.',
+    })
+  }
+})
+
+app.get('/api/fmp/fundamentals', async (req, res) => {
+  if (!FMP_API_KEY) {
+    res.status(503).json({
+      error:
+        'Financial Modeling Prep is not configured. Set FMP_API_KEY in the server environment.',
+    })
+    return
+  }
+
+  const symbols = parseSymbols(req.query.symbol ?? '')
+  const symbol = symbols[0]
+
+  if (!symbol) {
+    res.status(400).json({
+      error: 'Provide a valid symbol query parameter, e.g. ?symbol=AAPL',
+    })
+    return
+  }
+
+  const cached = fmpFundamentalsCache.get(symbol)
+  if (cached && Date.now() - cached.savedAt < FMP_FUNDAMENTALS_CACHE_TTL_MS) {
+    res.json({ cache: 'hit', ...cached.value })
+    return
+  }
+
+  try {
+    const data = await fetchFmpFundamentalsBundle(symbol)
+    fmpFundamentalsCache.set(symbol, { value: data, savedAt: Date.now() })
+    res.json({ cache: 'miss', ...data })
+  } catch (error) {
+    res.status(500).json({
+      error: error?.message ?? 'Could not load FMP fundamentals.',
     })
   }
 })

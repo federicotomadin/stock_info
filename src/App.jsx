@@ -9,6 +9,7 @@ import {cleanCompanyName, formatPercent, metricClass, numberOrFallback, parseSym
 import {horizonByTrendLabel, recommendationScore} from "./analyzer.js";
 import {stockInsight} from "./riskProfile.js";
 import {apiEndpoint, apiUrl, hasApiOriginConfigured} from "./servicesAPI.js";
+import {FundamentalsView} from "./FundamentalsView.jsx";
 
 
 export const PAGE_SIZE = 20
@@ -127,6 +128,18 @@ function detectCountry(stock) {
   return 'EE.UU'
 }
 
+function readFundamentalsSymbolFromUrl() {
+  if (typeof window === 'undefined') {
+    return null
+  }
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('fundamentals') !== '1') {
+    return null
+  }
+  const raw = params.get('symbol')?.trim().toUpperCase()
+  return raw || null
+}
+
 
 function App() {
   const [symbolsInput, setSymbolsInput] = useState(DEFAULT_SYMBOLS.join(', '))
@@ -152,6 +165,7 @@ function App() {
   const [companyProfiles, setCompanyProfiles] = useState({})
   const [profileLoading, setProfileLoading] = useState(false)
   const [workspaceTab, setWorkspaceTab] = useState('screener')
+  const [fundamentalsSymbol, setFundamentalsSymbol] = useState(() => readFundamentalsSymbolFromUrl())
   const hasLoadedUniverseRef = useRef(false)
   const universeRequestIdRef = useRef(0)
   const profileRequestIdRef = useRef(0)
@@ -585,6 +599,42 @@ function App() {
       ? Math.round((universeProgress.completed / universeProgress.total) * 100)
       : 0
 
+  function handleBackToScreener() {
+    setFundamentalsSymbol(null)
+    const url = new URL(window.location.href)
+    url.searchParams.delete('fundamentals')
+    url.searchParams.delete('symbol')
+    window.history.replaceState({}, '', `${url.pathname}${url.search}`)
+  }
+
+  function openFundamentalsInNewTab(symbol) {
+    const url = new URL(window.location.href)
+    url.searchParams.set('fundamentals', '1')
+    url.searchParams.set('symbol', symbol)
+    window.open(url.toString(), '_blank', 'noopener,noreferrer')
+  }
+
+  if (fundamentalsSymbol) {
+    return (
+      <>
+        <header className="app-header">
+          <div className="app-header-inner">
+            <h1>
+              Fundamentals
+              <span className="app-header-subtitle">Financial Modeling Prep</span>
+            </h1>
+          </div>
+        </header>
+        <main className="page">
+          <FundamentalsView
+            symbol={fundamentalsSymbol}
+            onBackToScreener={handleBackToScreener}
+          />
+        </main>
+      </>
+    )
+  }
+
   return (
     <>
       <header className="app-header">
@@ -947,7 +997,14 @@ function App() {
                       <div className="recommendation-content">
                         <div className="recommendation-main">
                           <h3>
-                            {stock.symbol}{' '}
+                            <button
+                              type="button"
+                              className="ticker-link ticker-link-inline"
+                              onClick={() => openFundamentalsInNewTab(stock.symbol)}
+                              title="Open fundamentals (FMP) in a new tab"
+                            >
+                              {stock.symbol}
+                            </button>{' '}
                             <small>{cleanCompanyName(stock.name) ?? 'N/A'}</small>
                           </h3>
                           <div className="rec-meta">
@@ -1033,7 +1090,16 @@ function App() {
                 <tbody>
                   {pagedStocks.map((stock) => (
                     <tr key={stock.symbol}>
-                      <td className="col-ticker">{stock.symbol}</td>
+                      <td className="col-ticker">
+                        <button
+                          type="button"
+                          className="ticker-link"
+                          onClick={() => openFundamentalsInNewTab(stock.symbol)}
+                          title="Open fundamentals (FMP) in a new tab"
+                        >
+                          {stock.symbol}
+                        </button>
+                      </td>
                       <td
                         className="cell-name col-name"
                         title={cleanCompanyName(stock.name) ?? 'N/A'}

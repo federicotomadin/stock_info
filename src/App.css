@@ -659,6 +659,188 @@ tbody tr:hover {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Ticker link → FMP fundamentals                                     */
+/* ------------------------------------------------------------------ */
+
+.ticker-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-weight: 700;
+  color: var(--color-brand);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ticker-link:hover {
+  color: var(--color-brand-hover);
+}
+
+.ticker-link-inline {
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.ticker-link-inline:hover {
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------------------ */
+/*  FMP fundamentals view                                              */
+/* ------------------------------------------------------------------ */
+
+.fundamentals-page {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.fundamentals-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.fundamentals-doc-link {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  text-decoration: none;
+}
+
+.fundamentals-doc-link:hover {
+  color: var(--color-brand);
+  text-decoration: underline;
+}
+
+.fundamentals-hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.fundamentals-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0 0 0.25rem;
+}
+
+.fundamentals-symbol {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.fundamentals-subtitle {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.fundamentals-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  align-items: center;
+}
+
+.fundamentals-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.fundamentals-card-wide {
+  grid-column: 1 / -1;
+}
+
+@media (min-width: 900px) {
+  .fundamentals-card-wide {
+    grid-column: span 2;
+  }
+}
+
+.fundamentals-dl {
+  display: grid;
+  gap: 0.5rem 1rem;
+  margin: 0;
+}
+
+.fundamentals-dl-3col {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.fundamentals-dl-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.fundamentals-dl-row dt {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.fundamentals-dl-row dd {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.fundamentals-footnote {
+  margin: 0.75rem 0 0;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+.fundamentals-table-panel {
+  margin-bottom: 1rem;
+}
+
+.fundamentals-table-wrap {
+  overflow-x: auto;
+}
+
+.fundamentals-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.fundamentals-table th,
+.fundamentals-table td {
+  padding: 0.5rem 0.625rem;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.fundamentals-table th {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.fundamentals-api-note {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Responsive                                                         */
 /* ------------------------------------------------------------------ */
 
