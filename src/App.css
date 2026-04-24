@@ -4,7 +4,7 @@
 
 .app-header {
   background: var(--color-header-bg);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: none;
   padding: 1rem 1.5rem;
   position: sticky;
   top: 0;
@@ -21,47 +21,48 @@
 
 .app-header h1 {
   color: var(--color-header-text);
-  font-size: 1.125rem;
-  font-weight: 700;
+  font-size: 1.375rem;
+  font-weight: 900;
   letter-spacing: -0.02em;
+  line-height: 1;
 }
 
 .app-header-subtitle {
   color: var(--color-header-muted);
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   margin-left: 0.75rem;
-  font-weight: 400;
+  font-weight: 500;
 }
 
 .page {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 1.25rem 1.5rem 3rem;
+  padding: 1.5rem 1.5rem 3rem;
 }
 
 /* ------------------------------------------------------------------ */
-/*  Panels / Cards                                                     */
+/*  Panels / Cards - Wise uses large rounded corners                   */
 /* ------------------------------------------------------------------ */
 
 .panel {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
-  padding: 1.25rem;
+  padding: 1.5rem;
   margin-bottom: 1rem;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-ring);
 }
 
 .panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 0.75rem;
+  margin-bottom: 1rem;
   gap: 0.5rem;
 }
 
 .panel-title {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -76,8 +77,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.375rem;
-  margin-bottom: 0.75rem;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
 }
 
 .toolbar:last-child {
@@ -85,12 +86,16 @@
 }
 
 .toolbar-label {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 600;
   color: var(--color-text-secondary);
-  margin-right: 0.125rem;
+  margin-right: 0.25rem;
   white-space: nowrap;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Chips - Wise pill style with scale animation                       */
+/* ------------------------------------------------------------------ */
 
 .chip {
   display: inline-flex;
@@ -100,25 +105,31 @@
   background: var(--color-surface);
   color: var(--color-text-secondary);
   border-radius: var(--radius-full);
-  padding: 0.3125rem 0.75rem;
-  font-size: 0.8125rem;
-  font-weight: 500;
+  padding: 0.375rem 0.875rem;
+  font-size: 0.875rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: transform var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast);
   white-space: nowrap;
   line-height: 1.4;
+  font-feature-settings: "calt" 1;
 }
 
 .chip:hover {
-  background: var(--color-surface-raised);
-  border-color: var(--color-text-muted);
+  transform: scale(1.05);
+  background: var(--color-surface-green);
+  border-color: var(--color-wise-green);
   color: var(--color-text-primary);
 }
 
+.chip:active {
+  transform: scale(0.95);
+}
+
 .chip.active {
-  background: var(--color-text-primary);
-  border-color: var(--color-text-primary);
-  color: #ffffff;
+  background: var(--color-wise-green);
+  border-color: var(--color-wise-green);
+  color: var(--color-dark-green);
 }
 
 /* ------------------------------------------------------------------ */
@@ -126,15 +137,15 @@
 /* ------------------------------------------------------------------ */
 
 .controls {
-  margin-bottom: 0.75rem;
+  margin-bottom: 1rem;
 }
 
 .controls label {
   display: block;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 600;
   color: var(--color-text-secondary);
-  margin-bottom: 0.375rem;
+  margin-bottom: 0.5rem;
 }
 
 .input-row {
@@ -146,24 +157,31 @@
   flex: 1;
   min-width: 200px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 0.5rem 0.75rem;
-  font-size: 0.875rem;
+  border-radius: var(--radius-sm);
+  padding: 0.625rem 1rem;
+  font-size: 1rem;
   font-family: inherit;
+  font-weight: 500;
   color: var(--color-text-primary);
   background: var(--color-surface);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  font-feature-settings: "calt" 1;
 }
 
 .input-field::placeholder {
   color: var(--color-text-placeholder);
+  font-weight: 400;
 }
 
 .input-field:focus {
   outline: none;
-  border-color: var(--color-brand);
-  box-shadow: 0 0 0 3px var(--color-brand-subtle);
+  border-color: var(--color-wise-green);
+  box-shadow: var(--shadow-ring-inset);
 }
+
+/* ------------------------------------------------------------------ */
+/*  Buttons - Wise green pill with scale animation                     */
+/* ------------------------------------------------------------------ */
 
 .btn {
   display: inline-flex;
@@ -171,42 +189,51 @@
   justify-content: center;
   gap: 0.375rem;
   border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  padding: 0.5rem 1rem;
-  font-size: 0.8125rem;
+  border-radius: var(--radius-full);
+  padding: 0.5rem 1.25rem;
+  font-size: 1rem;
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: transform var(--transition-fast), background var(--transition-fast);
   white-space: nowrap;
   line-height: 1.4;
+  font-feature-settings: "calt" 1;
+}
+
+.btn:hover {
+  transform: scale(1.05);
+}
+
+.btn:active {
+  transform: scale(0.95);
 }
 
 .btn-primary {
-  background: var(--color-brand);
-  color: #ffffff;
-  border-color: var(--color-brand);
+  background: var(--color-wise-green);
+  color: var(--color-dark-green);
+  border-color: var(--color-wise-green);
 }
 
 .btn-primary:hover {
-  background: var(--color-brand-hover);
-  border-color: var(--color-brand-hover);
+  background: var(--color-pastel-green);
+  border-color: var(--color-pastel-green);
 }
 
 .btn-secondary {
-  background: var(--color-surface);
+  background: rgba(22, 51, 0, 0.08);
   color: var(--color-text-primary);
-  border-color: var(--color-border);
+  border-color: transparent;
 }
 
 .btn-secondary:hover {
-  background: var(--color-surface-raised);
-  border-color: var(--color-text-muted);
+  background: rgba(22, 51, 0, 0.12);
 }
 
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
 }
 
 /* ------------------------------------------------------------------ */
@@ -217,12 +244,13 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   color: var(--color-text-secondary);
+  font-weight: 500;
 }
 
 .pagination-label {
-  font-weight: 500;
+  font-weight: 600;
   margin-right: 0.25rem;
 }
 
@@ -238,14 +266,14 @@
   display: flex;
   gap: 0;
   border-bottom: 2px solid var(--color-border);
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
 }
 
 .workspace-tab {
   position: relative;
-  padding: 0.625rem 1.125rem;
-  font-size: 0.875rem;
-  font-weight: 500;
+  padding: 0.75rem 1.25rem;
+  font-size: 1rem;
+  font-weight: 600;
   color: var(--color-text-muted);
   background: none;
   border: none;
@@ -254,6 +282,7 @@
   cursor: pointer;
   transition: color var(--transition-fast);
   border-radius: 0;
+  font-feature-settings: "calt" 1;
 }
 
 .workspace-tab:hover {
@@ -262,9 +291,9 @@
 }
 
 .workspace-tab.active {
-  color: var(--color-brand);
-  border-bottom-color: var(--color-brand);
-  font-weight: 600;
+  color: var(--color-dark-green);
+  border-bottom-color: var(--color-wise-green);
+  font-weight: 700;
 }
 
 /* ------------------------------------------------------------------ */
@@ -275,16 +304,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.125rem;
-  height: 1.125rem;
+  width: 1.25rem;
+  height: 1.25rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--color-text-muted);
   background: var(--color-surface-raised);
   cursor: help;
-  margin-left: 0.125rem;
+  margin-left: 0.25rem;
 }
 
 /* ------------------------------------------------------------------ */
@@ -292,15 +321,16 @@
 /* ------------------------------------------------------------------ */
 
 .status {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   margin-top: 0.5rem;
   color: var(--color-text-secondary);
+  font-weight: 500;
 }
 
 .status.error {
   color: var(--color-negative);
   background: var(--color-negative-bg);
-  padding: 0.5rem 0.75rem;
+  padding: 0.75rem 1rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--color-negative-border);
 }
@@ -308,13 +338,13 @@
 .status.warning {
   color: var(--color-warning);
   background: var(--color-warning-bg);
-  padding: 0.5rem 0.75rem;
+  padding: 0.75rem 1rem;
   border-radius: var(--radius-md);
   border: 1px solid #fde68a;
 }
 
 .status.loading {
-  color: var(--color-brand);
+  color: var(--color-dark-green);
 }
 
 /* ------------------------------------------------------------------ */
@@ -323,21 +353,21 @@
 
 .progress-bar-wrapper {
   margin-top: 0.5rem;
-  background: var(--color-border-subtle);
+  background: var(--color-light-mint);
   border-radius: var(--radius-full);
-  height: 0.375rem;
+  height: 0.5rem;
   overflow: hidden;
 }
 
 .progress-bar-fill {
   height: 100%;
-  background: var(--color-brand);
+  background: var(--color-wise-green);
   border-radius: var(--radius-full);
   transition: width 300ms ease;
 }
 
 /* ------------------------------------------------------------------ */
-/*  Data table                                                         */
+/*  Data table - Wise uses large rounded corners on tables             */
 /* ------------------------------------------------------------------ */
 
 .table-panel {
@@ -349,7 +379,8 @@ table {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
+  font-feature-settings: "calt" 1;
 }
 
 thead {
@@ -360,8 +391,8 @@ thead {
 
 th {
   text-align: left;
-  padding: 0.5rem 0.625rem;
-  font-size: 0.6875rem;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -372,9 +403,9 @@ th {
 }
 
 td {
-  padding: 0.5rem 0.625rem;
+  padding: 0.625rem 0.75rem;
   color: var(--color-text-primary);
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: 1px solid var(--color-border);
   vertical-align: middle;
 }
 
@@ -383,7 +414,7 @@ tbody tr {
 }
 
 tbody tr:hover {
-  background: var(--color-surface-raised);
+  background: var(--color-surface-green);
 }
 
 .col-name {
@@ -393,7 +424,7 @@ tbody tr:hover {
 
 .col-ticker {
   width: 7%;
-  font-weight: 600;
+  font-weight: 700;
   padding-right: 0.5rem;
 }
 
@@ -420,7 +451,7 @@ tbody tr:hover {
   width: 11%;
   white-space: nowrap;
   color: var(--color-text-muted);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
 }
 
 .col-trend {
@@ -436,7 +467,7 @@ tbody tr:hover {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Metric colors                                                      */
+/*  Metric colors - Wise semantic colors                               */
 /* ------------------------------------------------------------------ */
 
 .positive {
@@ -454,15 +485,15 @@ tbody tr:hover {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Trend chip                                                         */
+/*  Trend chip - Wise pill style                                       */
 /* ------------------------------------------------------------------ */
 
 .trend-chip {
   display: inline-flex;
   align-items: center;
   border-radius: var(--radius-full);
-  padding: 0.125rem 0.5rem;
-  font-size: 0.6875rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
   font-weight: 600;
   background: var(--color-surface-raised);
   color: var(--color-text-secondary);
@@ -487,26 +518,29 @@ tbody tr:hover {
 /* ------------------------------------------------------------------ */
 
 .profile-panel h2 {
-  margin: 0 0 0.25rem;
-  font-size: 1.0625rem;
+  margin: 0 0 0.375rem;
+  font-size: 1.375rem;
+  font-weight: 900;
+  line-height: 0.85;
 }
 
 .profile-panel .subtitle {
   color: var(--color-text-muted);
-  font-size: 0.8125rem;
-  margin-bottom: 0.75rem;
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+  font-weight: 500;
 }
 
 .profile-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 0.75rem;
+  gap: 1rem;
 }
 
 .profile-grid fieldset {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  padding: 0.75rem;
+  padding: 1rem;
   margin: 0;
   background: var(--color-surface-raised);
 }
@@ -517,18 +551,19 @@ tbody tr:hover {
   color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  padding: 0 0.25rem;
+  padding: 0 0.375rem;
 }
 
 .profile-grid label {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
-  font-size: 0.8125rem;
-  margin-top: 0.375rem;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
   cursor: pointer;
   color: var(--color-text-secondary);
   transition: color var(--transition-fast);
+  font-weight: 500;
 }
 
 .profile-grid label:hover {
@@ -542,21 +577,21 @@ tbody tr:hover {
   margin: 0;
   padding: 0;
   flex: 0 0 auto;
-  accent-color: var(--color-brand);
+  accent-color: var(--color-wise-green);
   cursor: pointer;
 }
 
 .profile-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
-  margin-top: 0.75rem;
-  padding: 0.5rem 0.875rem;
-  border-radius: var(--radius-md);
-  background: var(--color-brand-subtle);
-  border: 1px solid #bfdbfe;
-  font-size: 0.8125rem;
-  color: var(--color-brand);
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding: 0.625rem 1rem;
+  border-radius: var(--radius-full);
+  background: var(--color-light-mint);
+  border: 1px solid var(--color-wise-green);
+  font-size: 0.875rem;
+  color: var(--color-dark-green);
   font-weight: 600;
 }
 
@@ -565,60 +600,62 @@ tbody tr:hover {
 /* ------------------------------------------------------------------ */
 
 .recommendations {
-  margin-top: 1rem;
+  margin-top: 1.25rem;
   display: grid;
-  gap: 0.625rem;
+  gap: 0.75rem;
 }
 
 .recommendation-card {
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 1rem;
+  border-radius: var(--radius-xl);
+  padding: 1.25rem;
   background: var(--color-surface);
-  transition: box-shadow var(--transition-base), border-color var(--transition-base);
+  transition: transform var(--transition-base), box-shadow var(--transition-base), border-color var(--transition-base);
+  box-shadow: var(--shadow-ring);
 }
 
 .recommendation-card:hover {
-  box-shadow: var(--shadow-md);
-  border-color: var(--color-text-placeholder);
+  transform: scale(1.01);
+  border-color: var(--color-wise-green);
 }
 
 .recommendation-content {
   display: grid;
   grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr);
-  gap: 1rem;
+  gap: 1.25rem;
   align-items: start;
 }
 
 .recommendation-card h3 {
   margin: 0;
-  font-size: 0.9375rem;
+  font-size: 1.125rem;
   font-weight: 700;
   color: var(--color-text-primary);
+  line-height: 1.2;
 }
 
 .recommendation-card h3 small {
-  font-size: 0.8125rem;
-  font-weight: 400;
+  font-size: 0.875rem;
+  font-weight: 500;
   color: var(--color-text-muted);
-  margin-left: 0.375rem;
+  margin-left: 0.5rem;
 }
 
 .recommendation-card p {
-  margin: 0.25rem 0 0;
-  font-size: 0.8125rem;
+  margin: 0.375rem 0 0;
+  font-size: 0.875rem;
   color: var(--color-text-secondary);
   line-height: 1.5;
 }
 
 .source-badge {
   display: inline-block;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-wise-green);
   border-radius: var(--radius-full);
-  padding: 0.0625rem 0.5rem;
-  background: var(--color-brand-subtle);
-  color: var(--color-brand);
-  font-size: 0.6875rem;
+  padding: 0.125rem 0.625rem;
+  background: var(--color-light-mint);
+  color: var(--color-dark-green);
+  font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -628,22 +665,23 @@ tbody tr:hover {
   text-align: right;
   color: var(--color-text-secondary);
   line-height: 1.5;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
 }
 
 .rec-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.375rem;
+  gap: 0.625rem;
+  margin-top: 0.5rem;
 }
 
 .rec-meta-item {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: var(--color-text-muted);
+  font-weight: 500;
 }
 
 .rec-meta-item strong {
@@ -653,13 +691,13 @@ tbody tr:hover {
 
 .rec-divider {
   width: 1px;
-  height: 0.75rem;
+  height: 0.875rem;
   background: var(--color-border);
   align-self: center;
 }
 
 /* ------------------------------------------------------------------ */
-/*  Ticker link → FMP fundamentals                                     */
+/*  Ticker link                                                        */
 /* ------------------------------------------------------------------ */
 
 .ticker-link {
@@ -669,14 +707,14 @@ tbody tr:hover {
   margin: 0;
   font: inherit;
   font-weight: 700;
-  color: var(--color-brand);
+  color: var(--color-dark-green);
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 .ticker-link:hover {
-  color: var(--color-brand-hover);
+  color: var(--color-positive);
 }
 
 .ticker-link-inline {
@@ -701,18 +739,19 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
 }
 
 .fundamentals-doc-link {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   color: var(--color-text-muted);
   text-decoration: none;
+  font-weight: 500;
 }
 
 .fundamentals-doc-link:hover {
-  color: var(--color-brand);
+  color: var(--color-dark-green);
   text-decoration: underline;
 }
 
@@ -721,40 +760,41 @@ tbody tr:hover {
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 1rem;
 }
 
 .fundamentals-title {
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-size: 2rem;
+  font-weight: 900;
   color: var(--color-text-primary);
-  margin: 0 0 0.25rem;
+  margin: 0 0 0.375rem;
+  line-height: 0.85;
 }
 
 .fundamentals-symbol {
-  font-size: 0.9375rem;
-  font-weight: 600;
+  font-size: 1.125rem;
+  font-weight: 700;
   color: var(--color-text-muted);
 }
 
 .fundamentals-subtitle {
   margin: 0;
-  font-size: 0.875rem;
+  font-size: 1rem;
   color: var(--color-text-secondary);
 }
 
 .fundamentals-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.375rem;
+  gap: 0.5rem;
   align-items: center;
 }
 
 .fundamentals-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 1rem;
-  margin-bottom: 1rem;
+  gap: 1.25rem;
+  margin-bottom: 1.25rem;
 }
 
 .fundamentals-card-wide {
@@ -769,7 +809,7 @@ tbody tr:hover {
 
 .fundamentals-dl {
   display: grid;
-  gap: 0.5rem 1rem;
+  gap: 0.625rem 1.25rem;
   margin: 0;
 }
 
@@ -780,11 +820,11 @@ tbody tr:hover {
 .fundamentals-dl-row {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: 0.25rem;
 }
 
 .fundamentals-dl-row dt {
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -793,20 +833,20 @@ tbody tr:hover {
 
 .fundamentals-dl-row dd {
   margin: 0;
-  font-size: 0.875rem;
+  font-size: 1rem;
   font-weight: 600;
   color: var(--color-text-primary);
 }
 
 .fundamentals-footnote {
-  margin: 0.75rem 0 0;
-  font-size: 0.75rem;
+  margin: 1rem 0 0;
+  font-size: 0.8125rem;
   color: var(--color-text-muted);
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 .fundamentals-table-panel {
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
 }
 
 .fundamentals-table-wrap {
@@ -816,25 +856,25 @@ tbody tr:hover {
 .fundamentals-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
 }
 
 .fundamentals-table th,
 .fundamentals-table td {
-  padding: 0.5rem 0.625rem;
+  padding: 0.625rem 0.75rem;
   text-align: left;
   border-bottom: 1px solid var(--color-border);
 }
 
 .fundamentals-table th {
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--color-text-muted);
 }
 
 .fundamentals-api-note {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: var(--color-text-muted);
   margin: 0;
   line-height: 1.5;
@@ -850,7 +890,7 @@ tbody tr:hover {
   }
 
   .app-header {
-    padding: 0.75rem 1rem;
+    padding: 0.875rem 1rem;
   }
 
   .app-header-subtitle {
@@ -870,12 +910,20 @@ tbody tr:hover {
   }
 
   .toolbar {
-    gap: 0.25rem;
+    gap: 0.375rem;
   }
 
   .chip {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
+    padding: 0.3125rem 0.625rem;
+    font-size: 0.8125rem;
+  }
+  
+  h1 {
+    font-size: 2.5rem;
+  }
+  
+  h2 {
+    font-size: 1.75rem;
   }
 }
 
@@ -895,10 +943,11 @@ tbody tr:hover {
 
 .empty-state {
   text-align: center;
-  padding: 2.5rem 1rem;
+  padding: 3rem 1rem;
   color: var(--color-text-muted);
 }
 
 .empty-state p {
-  font-size: 0.875rem;
+  font-size: 1rem;
+  font-weight: 500;
 }
