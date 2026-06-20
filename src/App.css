@@ -383,6 +383,7 @@
 .table-panel {
   overflow-x: auto;
   margin: 0 -0.25rem;
+  -webkit-overflow-scrolling: touch;
 }
 
 table {
@@ -391,6 +392,13 @@ table {
   table-layout: fixed;
   font-size: 0.875rem;
   font-feature-settings: "calt" 1;
+}
+
+/* Keep columns from crushing into each other on small screens.
+   Once the viewport is narrower than this, the table scrolls
+   horizontally inside .table-panel instead of overlapping. */
+.table-panel table {
+  min-width: 760px;
 }
 
 thead {
@@ -1155,6 +1163,14 @@ tbody tr:hover {
     display: none;
   }
 
+  .panel {
+    padding: 1rem;
+  }
+
+  .recommendation-card {
+    padding: 1rem;
+  }
+
   .recommendation-content {
     grid-template-columns: 1fr;
   }
@@ -1175,13 +1191,12 @@ tbody tr:hover {
     padding: 0.3125rem 0.625rem;
     font-size: 0.8125rem;
   }
-  
-  h1 {
-    font-size: 2.5rem;
-  }
-  
-  h2 {
-    font-size: 1.75rem;
+
+  /* Prevent the ticker dropdown from spilling off the right edge */
+  .ticker-menu {
+    min-width: 0;
+    width: max-content;
+    max-width: min(260px, calc(100vw - 2rem));
   }
 }
 
@@ -1192,6 +1207,22 @@ tbody tr:hover {
 
   .input-row {
     flex-direction: column;
+  }
+
+  .input-field {
+    min-width: 0;
+  }
+
+  /* Let pagination wrap instead of overflowing */
+  .pagination {
+    flex-wrap: wrap;
+  }
+
+  /* Right-aligned dropdowns near the screen edge open leftwards */
+  .col-trend .ticker-menu,
+  .recommendation-card .ticker-menu {
+    left: auto;
+    right: 0;
   }
 }
 
