@@ -12,6 +12,17 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "22"
-      # Opcional: mejora perfiles de empresa (https://finnhub.io/)
+      # Required for /api/fmp/fundamentals. Set in Render dashboard → Environment.
+      # GitHub repo secrets do NOT apply here — only Render env vars do.
+      - key: FMP_API_KEY
+        sync: false
       - key: FINNHUB_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: AI_PROVIDER
         sync: false

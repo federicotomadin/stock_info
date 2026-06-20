@@ -2600,14 +2600,6 @@ app.get('/api/fmp/fundamentals', async (req, res) => {
 })
 
 app.get('/api/technical-analysis', async (req, res) => {
-  if (!FMP_API_KEY) {
-    res.status(503).json({
-      error:
-        'Financial Modeling Prep is not configured. Set FMP_API_KEY in the server environment.',
-    })
-    return
-  }
-
   const symbols = parseSymbols(req.query.symbol ?? '')
   const symbol = symbols[0]
 
