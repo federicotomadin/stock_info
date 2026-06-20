@@ -1,8 +1,28 @@
-import { useEffect, useState } from 'react'
-import { cleanCompanyName } from './utlils.js'
-import { apiEndpoint } from './servicesAPI.js'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { cleanCompanyName } from './utils'
+import { apiEndpoint } from './servicesAPI'
 
-function formatCompactNumber(value) {
+interface FundamentalsViewProps {
+  symbol: string
+  onBackToScreener: () => void
+}
+
+interface FmpFundamentalsPayload {
+  [key: string]: unknown
+  profile?: Record<string, unknown> | null
+  keyMetricsTtm?: Record<string, unknown> | null
+  ratiosTtm?: Record<string, unknown> | null
+  discountedCashFlow?: Record<string, unknown> | null
+  incomeStatementAnnual?: Array<Record<string, unknown>>
+}
+
+function str(value: unknown, fallback = ''): string {
+  if (typeof value === 'string') return value
+  if (value === null || value === undefined) return fallback
+  return String(value)
+}
+
+function formatCompactNumber(value: unknown): string {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) {
     return 'N/A'
   }
@@ -15,7 +35,7 @@ function formatCompactNumber(value) {
   return n.toFixed(2)
 }
 
-function formatRatio(value, digits = 2) {
+function formatRatio(value: unknown, digits = 2): string {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) {
     return 'N/A'
   }
@@ -23,7 +43,7 @@ function formatRatio(value, digits = 2) {
 }
 
 /** FMP often returns decimals (0.15 = 15%); sometimes already as a percentage. */
-function formatPctFlexible(value) {
+function formatPctFlexible(value: unknown): string | null {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) {
     return null
   }
@@ -34,7 +54,7 @@ function formatPctFlexible(value) {
   return `${formatRatio(n, 2)}%`
 }
 
-function pickDefinedRow(label, value) {
+function pickDefinedRow(label: string, value: ReactNode) {
   if (value === null || value === undefined || value === '') {
     return null
   }
@@ -46,10 +66,62 @@ function pickDefinedRow(label, value) {
   )
 }
 
-export function FundamentalsView({ symbol, onBackToScreener }) {
+function TradingViewChart({ symbol }: { symbol: string }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    container.innerHTML = ''
+
+    const script = document.createElement('script')
+    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js'
+    script.type = 'text/javascript'
+    script.async = true
+    script.innerHTML = JSON.stringify({
+      autosize: true,
+      symbol,
+      interval: 'D',
+      timezone: 'Etc/UTC',
+      theme: 'light',
+      style: '1',
+      locale: 'en',
+      allow_symbol_change: false,
+      hide_top_toolbar: false,
+      hide_legend: false,
+      save_image: false,
+      calendar: false,
+      support_host: 'https://www.tradingview.com',
+    })
+
+    container.appendChild(script)
+
+    return () => { container.innerHTML = '' }
+  }, [symbol])
+
+  return (
+    <div className="tradingview-widget-container" ref={containerRef}>
+      <div className="tradingview-widget-container__widget" />
+    </div>
+  )
+}
+
+function isRateLimited(payload: FmpFundamentalsPayload | null): boolean {
+  if (!payload) return false
+  const errorFields = [
+    'profileError', 'keyMetricsTtmError', 'ratiosTtmError',
+    'incomeStatementError', 'balanceSheetError', 'cashFlowError',
+    'discountedCashFlowError',
+  ]
+  const errors = errorFields.map((f) => payload[f]).filter(Boolean) as string[]
+  return errors.length >= 3 && errors.some((e) => /limit\s*reach/i.test(e))
+}
+
+export function FundamentalsView({ symbol, onBackToScreener }: FundamentalsViewProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [payload, setPayload] = useState(null)
+  const [payload, setPayload] = useState<FmpFundamentalsPayload | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -92,6 +164,8 @@ export function FundamentalsView({ symbol, onBackToScreener }) {
     }
   }, [symbol])
 
+  const rateLimited = isRateLimited(payload)
+
   const profile = payload?.profile
   const km = payload?.keyMetricsTtm
   const ratios = payload?.ratiosTtm
@@ -101,13 +175,38 @@ export function FundamentalsView({ symbol, onBackToScreener }) {
   const dcfValue = dcf?.dcf
   const stockPriceFromDcf = dcf?.['Stock Price'] ?? dcf?.stockPrice
 
-  const pe = km?.peRatio ?? km?.peRatioTTM
-  const pb = km?.pbRatio ?? km?.ptbRatio ?? km?.priceToBookRatioTTM
-  const roe = km?.roeTTM ?? km?.roe
-  const roic = km?.roicTTM ?? km?.roic
+  const pe =
+    km?.peRatio ??
+    km?.peRatioTTM ??
+    ratios?.priceToEarningsRatioTTM ??
+    ratios?.priceEarningsRatioTTM
+  const pb =
+    km?.pbRatio ??
+    km?.ptbRatio ??
+    km?.priceToBookRatioTTM ??
+    ratios?.priceToBookRatioTTM
+  const roe = km?.roeTTM ?? km?.roe ?? km?.returnOnEquityTTM
+  const roic = km?.roicTTM ?? km?.roic ?? km?.returnOnInvestedCapitalTTM
+  const evToEbitda =
+    km?.enterpriseValueOverEBITDATTM ??
+    km?.evToEBITDATTM ??
+    ratios?.enterpriseValueMultipleTTM
+  const debtEquity =
+    km?.debtToEquity ??
+    km?.debtToEquityTTM ??
+    ratios?.debtToEquityRatioTTM
   const divYield =
-    km?.dividendYieldTTM ?? km?.dividendYield ?? km?.dividendYieldPercentage
-  const fcfYield = km?.freeCashFlowYieldTTM ?? km?.freeCashFlowYield ?? km?.fcfYieldTTM
+    km?.dividendYieldTTM ??
+    km?.dividendYield ??
+    km?.dividendYieldPercentage ??
+    ratios?.dividendYieldTTM
+  const fcfYield =
+    km?.freeCashFlowYieldTTM ??
+    km?.freeCashFlowYield ??
+    km?.fcfYieldTTM ??
+    (ratios?.priceToFreeCashFlowRatioTTM
+      ? 1 / Number(ratios.priceToFreeCashFlowRatioTTM)
+      : null)
 
   return (
     <div className="fundamentals-page">
@@ -128,34 +227,54 @@ export function FundamentalsView({ symbol, onBackToScreener }) {
       <section className="panel fundamentals-hero">
         <div className="fundamentals-hero-main">
           <h2 className="fundamentals-title">
-            {profile?.companyName ? cleanCompanyName(profile.companyName) : symbol}{' '}
+            {profile?.companyName ? cleanCompanyName(str(profile.companyName)) : symbol}{' '}
             <span className="fundamentals-symbol">{symbol}</span>
           </h2>
           <p className="fundamentals-subtitle">
-            {profile?.exchangeShortName ?? profile?.exchange ?? '—'}
-            {profile?.sector ? ` · ${profile.sector}` : ''}
-            {profile?.industry ? ` · ${profile.industry}` : ''}
+            {str(profile?.exchangeShortName || profile?.exchange, '—')}
+            {profile?.sector ? ` · ${str(profile.sector)}` : ''}
+            {profile?.industry ? ` · ${str(profile.industry)}` : ''}
           </p>
         </div>
         <div className="fundamentals-meta">
           {payload?.cache ? (
             <span className="source-badge" title="Server-side cache reduces duplicate FMP calls">
-              Cache: {payload.cache}
+              Cache: {str(payload.cache)}
             </span>
           ) : null}
           {payload?.dataSource ? (
-            <span className="source-badge">Data: {payload.dataSource}</span>
+            <span className="source-badge">Data: {str(payload.dataSource)}</span>
           ) : null}
+        </div>
+      </section>
+
+      <section className="panel fundamentals-chart-panel">
+        <div className="panel-header">
+          <span className="panel-title">Live chart</span>
+        </div>
+        <div className="fundamentals-chart-wrap">
+          <TradingViewChart symbol={symbol} />
         </div>
       </section>
 
       {loading ? <p className="status loading">Loading Financial Modeling Prep data…</p> : null}
       {error ? <p className="status error">{error}</p> : null}
 
-      {!loading && !error && payload ? (
+      {rateLimited ? (
+        <div className="status warning fundamentals-limit-banner">
+          <strong>FMP API limit reached.</strong> The free tier daily quota has been exhausted.
+          Fundamentals data will be available again tomorrow, or you can{' '}
+          <a href="https://site.financialmodelingprep.com/" target="_blank" rel="noreferrer noopener">
+            upgrade your FMP plan
+          </a>.
+          The live chart above still works independently.
+        </div>
+      ) : null}
+
+      {!loading && !error && payload && !rateLimited ? (
         <>
           {payload.profileError ? (
-            <p className="status warning">Profile: {payload.profileError}</p>
+            <p className="status warning">Profile: {str(payload.profileError)}</p>
           ) : null}
 
           <div className="fundamentals-grid">
@@ -190,7 +309,7 @@ export function FundamentalsView({ symbol, onBackToScreener }) {
                 <span className="panel-title">DCF snapshot</span>
               </div>
               {payload.discountedCashFlowError ? (
-                <p className="status warning">{payload.discountedCashFlowError}</p>
+                <p className="status warning">{str(payload.discountedCashFlowError)}</p>
               ) : (
                 <dl className="fundamentals-dl">
                   {pickDefinedRow(
@@ -227,22 +346,20 @@ export function FundamentalsView({ symbol, onBackToScreener }) {
                 <span className="panel-title">Key metrics (TTM)</span>
               </div>
               {payload.keyMetricsTtmError ? (
-                <p className="status warning">{payload.keyMetricsTtmError}</p>
+                <p className="status warning">{str(payload.keyMetricsTtmError)}</p>
               ) : (
                 <dl className="fundamentals-dl fundamentals-dl-3col">
                   {pickDefinedRow('P/E', pe != null ? formatRatio(pe, 2) : null)}
                   {pickDefinedRow('P/B', pb != null ? formatRatio(pb, 2) : null)}
                   {pickDefinedRow(
                     'EV / EBITDA',
-                    km?.enterpriseValueOverEBITDATTM != null
-                      ? formatRatio(km.enterpriseValueOverEBITDATTM, 2)
-                      : null
+                    evToEbitda != null ? formatRatio(evToEbitda, 2) : null
                   )}
                   {pickDefinedRow('ROE', roe != null ? formatPctFlexible(roe) : null)}
                   {pickDefinedRow('ROIC', roic != null ? formatPctFlexible(roic) : null)}
                   {pickDefinedRow(
                     'Debt / equity',
-                    km?.debtToEquity != null ? formatRatio(km.debtToEquity, 2) : null
+                    debtEquity != null ? formatRatio(debtEquity, 2) : null
                   )}
                   {pickDefinedRow(
                     'Dividend yield',
@@ -261,7 +378,7 @@ export function FundamentalsView({ symbol, onBackToScreener }) {
                 <span className="panel-title">Ratios (TTM)</span>
               </div>
               {payload.ratiosTtmError ? (
-                <p className="status warning">{payload.ratiosTtmError}</p>
+                <p className="status warning">{str(payload.ratiosTtmError)}</p>
               ) : (
                 <dl className="fundamentals-dl fundamentals-dl-3col">
                   {pickDefinedRow(
@@ -289,13 +406,18 @@ export function FundamentalsView({ symbol, onBackToScreener }) {
                   )}
                   {pickDefinedRow(
                     'Current ratio',
-                    ratios?.currentRatioTTM != null ? formatRatio(ratios.currentRatioTTM, 2) : null
+                    (() => {
+                      const v = ratios?.currentRatioTTM ?? km?.currentRatioTTM
+                      return v != null ? formatRatio(v, 2) : null
+                    })()
                   )}
                   {pickDefinedRow(
                     'Interest coverage',
-                    ratios?.interestCoverageTTM != null
-                      ? formatRatio(ratios.interestCoverageTTM, 2)
-                      : null
+                    (() => {
+                      const v =
+                        ratios?.interestCoverageTTM ?? ratios?.interestCoverageRatioTTM
+                      return v != null ? formatRatio(v, 2) : null
+                    })()
                   )}
                   {pickDefinedRow(
                     'Asset turnover',
@@ -311,7 +433,7 @@ export function FundamentalsView({ symbol, onBackToScreener }) {
               <span className="panel-title">Income statement (annual, recent)</span>
             </div>
             {payload.incomeStatementError ? (
-              <p className="status warning">{payload.incomeStatementError}</p>
+              <p className="status warning">{str(payload.incomeStatementError)}</p>
             ) : income.length ? (
               <div className="fundamentals-table-wrap">
                 <table className="fundamentals-table">
@@ -325,8 +447,8 @@ export function FundamentalsView({ symbol, onBackToScreener }) {
                   </thead>
                   <tbody>
                     {income.slice(0, 5).map((row, index) => (
-                      <tr key={row.calendarYear ?? row.date ?? row.fillingDate ?? index}>
-                        <td>{row.calendarYear ?? '—'}</td>
+                      <tr key={String(row.calendarYear ?? row.date ?? row.fillingDate ?? index)}>
+                        <td>{str(row.calendarYear, '—')}</td>
                         <td>{row.revenue != null ? formatCompactNumber(row.revenue) : '—'}</td>
                         <td>{row.netIncome != null ? formatCompactNumber(row.netIncome) : '—'}</td>
                         <td>{row.eps != null ? formatRatio(row.eps, 2) : '—'}</td>

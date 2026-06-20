@@ -5,12 +5,7 @@
 const HARDCODED_PRODUCTION_API_ORIGIN =
   'https://stock-info-api-ag2h.onrender.com'
 
-/**
- * 1) VITE_API_ORIGIN tiene prioridad (secret de GitHub, etc.).
- * 2) En producción, si falta, se usa la constante de arriba.
- * En desarrollo, sin env: rutas relativas /api → proxy de Vite.
- */
-function resolveApiOrigin() {
+function resolveApiOrigin(): string {
   const fromEnv = (import.meta.env.VITE_API_ORIGIN ?? '').trim().replace(/\/$/, '')
   if (fromEnv) {
     return fromEnv
@@ -23,17 +18,16 @@ function resolveApiOrigin() {
 
 const API_ORIGIN = resolveApiOrigin()
 
-/** True si hay URL de API. */
-export function hasApiOriginConfigured() {
+export function hasApiOriginConfigured(): boolean {
   return Boolean(API_ORIGIN)
 }
 
-export const apiUrl = (path) => {
+export const apiUrl = (path: string): string => {
   const normalized = path.startsWith('/') ? path : `/${path}`
   return API_ORIGIN ? `${API_ORIGIN}${normalized}` : normalized
 }
 
-export const apiEndpoint = (path) => {
+export const apiEndpoint = (path: string): URL => {
   const full = apiUrl(path)
   if (full.startsWith('http')) {
     return new URL(full)

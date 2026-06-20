@@ -1,65 +1,139 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import './App.css'
 import {
-  COUNTRY_LABELS, COUNTRY_SYMBOL_OVERRIDES,
-  DEFAULT_SYMBOLS, INVESTMENT_GOALS, SORT_OPTIONS, TREND_LABELS, TREND_MEANINGS
+  COUNTRY_LABELS,
+  COUNTRY_SYMBOL_OVERRIDES,
+  DEFAULT_SYMBOLS,
+  INVESTMENT_GOALS,
+  SORT_OPTIONS,
+  TREND_LABELS,
+  TREND_MEANINGS,
+} from './models/constants'
+import {
+  BATCH_CONCURRENCY,
+  CACHE_TTL_MS,
+  MANUAL_STOCKS_DEBOUNCE_MS,
+  MARKET_SNAPSHOT_STORAGE_KEY,
+  MAX_SYMBOLS,
+  PAGE_SIZE,
+} from './constants/app'
+import {
+  cleanCompanyName,
+  formatPercent,
+  metricClass,
+  numberOrFallback,
+  parseSymbols,
+  trendTooltip,
+} from './utils'
+import { horizonByTrendLabel, recommendationScore } from './analyzer'
+import { stockInsight } from './riskProfile'
+import { apiEndpoint, apiUrl, hasApiOriginConfigured } from './servicesAPI'
+import { FundamentalsView } from './FundamentalsView'
+import { TechnicalAnalysisView } from './TechnicalAnalysisView'
+import type {
+  AppMode,
+  CompanyProfile,
+  CountryLabel,
+  EnrichedStock,
+  InvestmentGoalId,
+  MarketSnapshotCache,
+  RiskProfile,
+  SortDirection,
+  SortMetric,
+  StockQuote,
+  TrendAnalysis,
+  TrendLabel,
+  TrendTone,
+  UniverseItem,
+  UniverseProgress,
+} from './types/stock'
+
+function readMarketSnapshotCache(): MarketSnapshotCache | null {
+  try {
+    const raw = localStorage.getItem(MARKET_SNAPSHOT_STORAGE_KEY)
+    if (!raw) {
+      return null
+    }
+
+    const cached = JSON.parse(raw)
+    if (cached?.savedAt && Date.now() - cached.savedAt < CACHE_TTL_MS && cached.data?.length) {
+      return cached
+    }
+  } catch {
+    // Ignore corrupted cache.
+  }
+
+  return null
 }
-  from "./models/constants.js";
-import {cleanCompanyName, formatPercent, metricClass, numberOrFallback, parseSymbols, trendTooltip} from "./utlils.js";
-import {horizonByTrendLabel, recommendationScore} from "./analyzer.js";
-import {stockInsight} from "./riskProfile.js";
-import {apiEndpoint, apiUrl, hasApiOriginConfigured} from "./servicesAPI.js";
-import {FundamentalsView} from "./FundamentalsView.jsx";
+
+function writeMarketSnapshotCache(data: StockQuote[]) {
+  try {
+    localStorage.setItem(
+      MARKET_SNAPSHOT_STORAGE_KEY,
+      JSON.stringify({ data, savedAt: Date.now() })
+    )
+  } catch {
+    // Quota exceeded or storage unavailable.
+  }
+}
 
 
-export const PAGE_SIZE = 20
-export const MAX_SYMBOLS = 120
-export const BATCH_CONCURRENCY = 3
+function analyzeTrend(stock: StockQuote): TrendAnalysis {
+  const hasMonth = Number.isFinite(stock.monthChange)
+  const hasYear = Number.isFinite(stock.yearChange)
 
+  // Newly IPO'd or otherwise no-history tickers: don't pretend it's a "downtrend".
+  if (!hasMonth && !hasYear) {
+    return {
+      score: 0,
+      label: 'Neutral',
+      tone: 'neutral',
+      detail: 'Recently listed — not enough historical data to compute a trend yet.',
+    }
+  }
 
-function analyzeTrend(stock) {
   const day = numberOrFallback(stock.dayChange, -100)
   const month = numberOrFallback(stock.monthChange, -100)
   const year = numberOrFallback(stock.yearChange, -100)
   const acceleration = day - month / 21
 
   let score = day * 0.55 + month * 0.35 + year * 0.1
-  let label = 'Neutral'
-  let tone = 'neutral'
+  let label: TrendLabel = 'Neutral'
+  let tone: TrendTone = 'neutral'
   let detail = 'No clear trend signal yet.'
 
   if (day > 1.1 && month < 4 && year < 18) {
     score += 10
     label = 'Early breakout'
-    tone = 'positive'
-    detail = 'Strong daily move with low long-term saturation.'
+    tone = 'speculative'
+    detail = 'Strong daily move but unconfirmed by longer timeframes — high risk, could reverse.'
   } else if (day > 0.4 && month > 0 && year < 0) {
     score += 14
     label = 'Reversal'
-    tone = 'positive'
-    detail = 'Short-term momentum turning positive after weak year.'
+    tone = 'caution'
+    detail = 'Short-term momentum turning positive after weak year — watch for confirmation.'
   } else if (day > 0 && month > 6 && year > 12 && acceleration > -0.8) {
     score += 5
     label = 'Momentum'
     tone = 'positive'
-    detail = 'Uptrend still active across day, month and year.'
+    detail = 'Confirmed uptrend across day, month and year — strongest signal.'
   } else if (day < 0 && month < 0 && year < 0) {
     score -= 8
     label = 'Downtrend'
     tone = 'negative'
-    detail = 'Weakness remains across all tracked windows.'
+    detail = 'Weakness remains across all tracked windows — avoid.'
   } else if (day > 0 && month < 0 && year > 0) {
     score += 3
     label = 'Pullback bounce'
-    tone = 'neutral'
-    detail = 'Positive day while month is in correction.'
+    tone = 'caution'
+    detail = 'Positive day while month is in correction — timing uncertain.'
   }
 
   return { score, label, tone, detail }
 }
 
 
-function detectCountry(stock) {
+function detectCountry(stock: Partial<EnrichedStock>): CountryLabel {
   const symbol = (stock.symbol ?? '').toUpperCase()
   const exchange = (stock.exchange ?? '').toUpperCase()
   const name = (stock.name ?? '').toUpperCase()
@@ -128,7 +202,7 @@ function detectCountry(stock) {
   return 'EE.UU'
 }
 
-function readFundamentalsSymbolFromUrl() {
+function readFundamentalsSymbolFromUrl(): string | null {
   if (typeof window === 'undefined') {
     return null
   }
@@ -140,34 +214,183 @@ function readFundamentalsSymbolFromUrl() {
   return raw || null
 }
 
+function readTechnicalSymbolFromUrl(): string | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('technical') !== '1') {
+    return null
+  }
+  const raw = params.get('symbol')?.trim().toUpperCase()
+  return raw || null
+}
+
+interface SortableHeaderProps {
+  metricId: SortMetric
+  label: string
+  sortMetric: SortMetric
+  sortDirection: SortDirection
+  onSort: (metricId: SortMetric) => void
+}
+
+function SortableHeader({ metricId, label, sortMetric, sortDirection, onSort }: SortableHeaderProps) {
+  const isActive = sortMetric === metricId
+  const indicator = isActive ? (sortDirection === 'desc' ? '▼' : '▲') : ''
+  const tooltip = isActive
+    ? `Click para invertir (actual: ${sortDirection === 'desc' ? 'mayor a menor' : 'menor a mayor'})`
+    : `Ordenar por ${label}`
+
+  return (
+    <button
+      type="button"
+      className={`sortable-header ${isActive ? 'active' : ''}`}
+      onClick={() => onSort(metricId)}
+      title={tooltip}
+      aria-sort={
+        isActive ? (sortDirection === 'desc' ? 'descending' : 'ascending') : 'none'
+      }
+    >
+      <span>{label}</span>
+      {indicator ? (
+        <span className="sort-indicator" aria-hidden>
+          {indicator}
+        </span>
+      ) : (
+        <span className="sort-indicator-dim" aria-hidden>
+          ↕
+        </span>
+      )}
+    </button>
+  )
+}
+
+interface TickerActionsMenuProps {
+  symbol: string
+  onOpenFundamentals: () => void
+  onOpenTechnical: () => void
+  className?: string
+}
+
+function TickerActionsMenu({
+  symbol,
+  onOpenFundamentals,
+  onOpenTechnical,
+  className = 'ticker-link',
+}: TickerActionsMenuProps) {
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLSpanElement>(null)
+
+  useEffect(() => {
+    if (!open) {
+      return undefined
+    }
+
+    function handleOutsideClick(event: MouseEvent) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setOpen(false)
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutsideClick)
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [open])
+
+  return (
+    <span className="ticker-actions" ref={containerRef}>
+      <button
+        type="button"
+        className={className}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        title="Abrir menú de análisis"
+      >
+        {symbol}
+      </button>
+      {open ? (
+        <div className="ticker-menu" role="menu">
+          <button
+            type="button"
+            role="menuitem"
+            className="ticker-menu-item"
+            onClick={() => {
+              setOpen(false)
+              onOpenFundamentals()
+            }}
+          >
+            <span className="ticker-menu-item-title">Fundamentals</span>
+            <span className="ticker-menu-item-subtitle">Métricas FMP (P/E, ROE, DCF…)</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="ticker-menu-item"
+            onClick={() => {
+              setOpen(false)
+              onOpenTechnical()
+            }}
+          >
+            <span className="ticker-menu-item-title">Análisis técnico</span>
+            <span className="ticker-menu-item-subtitle">SMA, RSI, soportes y lectura AI</span>
+          </button>
+        </div>
+      ) : null}
+    </span>
+  )
+}
+
 
 function App() {
   const [symbolsInput, setSymbolsInput] = useState(DEFAULT_SYMBOLS.join(', '))
-  const [stocks, setStocks] = useState([])
-  const [marketUniverse, setMarketUniverse] = useState([])
+  const [stocks, setStocks] = useState<StockQuote[]>([])
+  const [marketUniverse, setMarketUniverse] = useState<UniverseItem[]>([])
   const [universeLoading, setUniverseLoading] = useState(false)
   const [universeSearch, setUniverseSearch] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
-  const [loading, setLoading] = useState(false)
+  const [fullMarketStocksLoading, setFullMarketStocksLoading] = useState(false)
+  const [manualStocksLoading, setManualStocksLoading] = useState(false)
   const [error, setError] = useState('')
   const [warning, setWarning] = useState('')
   const [universeError, setUniverseError] = useState('')
-  const [universeProgress, setUniverseProgress] = useState({ completed: 0, total: 0 })
-  const [mode, setMode] = useState('universe')
-  const [sortMetric, setSortMetric] = useState('year')
-  const [sortDirection, setSortDirection] = useState('desc')
-  const [trendFilter, setTrendFilter] = useState('all')
-  const [countryFilter, setCountryFilter] = useState('all')
-  const [riskTolerance, setRiskTolerance] = useState('medium')
-  const [investmentExperience, setInvestmentExperience] = useState('intermediate')
-  const [investmentHorizon, setInvestmentHorizon] = useState('medium')
-  const [investmentGoals, setInvestmentGoals] = useState(['growth'])
-  const [companyProfiles, setCompanyProfiles] = useState({})
+  const [universeProgress, setUniverseProgress] = useState({
+    completed: 0,
+    total: 0,
+    symbolsLoaded: 0,
+    symbolsTotal: 0,
+  })
+  const [mode, setMode] = useState<AppMode>('universe')
+  const [sortMetric, setSortMetric] = useState<SortMetric>('year')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [trendFilter, setTrendFilter] = useState<TrendLabel | 'all'>('all')
+  const [countryFilter, setCountryFilter] = useState<CountryLabel | 'all'>('all')
+  const [riskTolerance, setRiskTolerance] = useState<'low' | 'medium' | 'high'>('medium')
+  const [investmentExperience, setInvestmentExperience] = useState<
+    'beginner' | 'intermediate' | 'advanced'
+  >('intermediate')
+  const [investmentHorizon, setInvestmentHorizon] = useState<'short' | 'medium' | 'long'>('medium')
+  const [investmentGoals, setInvestmentGoals] = useState<InvestmentGoalId[]>(['growth'])
+  const [companyProfiles, setCompanyProfiles] = useState<Record<string, CompanyProfile>>({})
   const [profileLoading, setProfileLoading] = useState(false)
-  const [workspaceTab, setWorkspaceTab] = useState('screener')
+  const [workspaceTab, setWorkspaceTab] = useState<'screener' | 'profile'>('screener')
   const [fundamentalsSymbol, setFundamentalsSymbol] = useState(() => readFundamentalsSymbolFromUrl())
+  const [technicalSymbol, setTechnicalSymbol] = useState(() => readTechnicalSymbolFromUrl())
   const hasLoadedUniverseRef = useRef(false)
   const universeRequestIdRef = useRef(0)
+  const manualStocksRequestIdRef = useRef(0)
   const profileRequestIdRef = useRef(0)
 
   const filteredUniverse = useMemo(() => {
@@ -203,7 +426,7 @@ function App() {
     })
 
     sorted.sort((a, b) => {
-      const metricByKey = {
+      const metricByKey: Record<SortMetric, 'trendScore' | 'dayChange' | 'monthChange' | 'yearChange'> = {
         trend: 'trendScore',
         day: 'dayChange',
         month: 'monthChange',
@@ -317,8 +540,8 @@ function App() {
           return
         }
 
-        const map = {}
-        for (const item of payload.data ?? []) {
+        const map: Record<string, CompanyProfile> = {}
+        for (const item of (payload as { data?: CompanyProfile[] }).data ?? []) {
           map[item.symbol] = item
         }
         setCompanyProfiles(map)
@@ -336,7 +559,16 @@ function App() {
       })
   }, [recommendedStocks, workspaceTab])
 
-  function toggleGoal(goalId) {
+  function handleSort(metricId: SortMetric) {
+    if (sortMetric === metricId) {
+      setSortDirection((current) => (current === 'desc' ? 'asc' : 'desc'))
+    } else {
+      setSortMetric(metricId)
+      setSortDirection('desc')
+    }
+  }
+
+  function toggleGoal(goalId: InvestmentGoalId) {
     setInvestmentGoals((current) => {
       if (current.includes(goalId)) {
         if (current.length === 1) {
@@ -350,12 +582,18 @@ function App() {
 
   const pagedStocks = useMemo(() => {
     if (mode !== 'universe') {
-      return countryFilteredStocks
+      const requestedSymbols = new Set(parseSymbols(symbolsInput))
+      if (!requestedSymbols.size) {
+        return []
+      }
+      return countryFilteredStocks.filter((stock) =>
+        requestedSymbols.has(String(stock.symbol ?? '').toUpperCase())
+      )
     }
 
     const start = (currentPage - 1) * PAGE_SIZE
     return countryFilteredStocks.slice(start, start + PAGE_SIZE)
-  }, [countryFilteredStocks, currentPage, mode])
+  }, [countryFilteredStocks, currentPage, mode, symbolsInput])
 
   const totalPages = useMemo(() => {
     if (mode !== 'universe') {
@@ -365,13 +603,17 @@ function App() {
     return Math.max(1, Math.ceil(countryFilteredStocks.length / PAGE_SIZE))
   }, [countryFilteredStocks.length, mode])
 
-  const loadUniverse = useCallback(async () => {
+  const loadUniverse = useCallback(async ({ force = false } = {}) => {
     setUniverseLoading(true)
     setUniverseError('')
 
     try {
-      const response = await fetch(apiUrl('/api/universe'))
-      let payload = {}
+      const url = force ? apiUrl('/api/universe?force=1') : apiUrl('/api/universe')
+
+      console.log('URL', url)
+
+      const response = await fetch(url)
+      let payload: { error?: string; data?: UniverseItem[] } = {}
       try {
         payload = await response.json()
       } catch {
@@ -395,161 +637,263 @@ function App() {
     }
   }, [])
 
-  const loadStocks = useCallback(
-    async (customInput) => {
-      const symbols = parseSymbols(customInput)
+  const fetchManualStocks = useCallback(async (rawInput: string, { fromSubmit = false } = {}) => {
+    const symbols = parseSymbols(rawInput)
 
-      if (!symbols.length) {
+    if (!symbols.length) {
+      manualStocksRequestIdRef.current += 1
+      setManualStocksLoading(false)
+      if (fromSubmit) {
         setError('Enter at least one valid ticker. Example: AAPL, MSFT, NVDA')
-        setStocks([])
+      } else {
+        setError('')
+      }
+      setStocks([])
+      setWarning('')
+      return
+    }
+
+    const requestId = manualStocksRequestIdRef.current + 1
+    manualStocksRequestIdRef.current = requestId
+
+    setManualStocksLoading(true)
+    setStocks([])
+    setError('')
+    setWarning('')
+    try {
+      const endpoint = apiEndpoint('/api/stocks')
+      endpoint.searchParams.set('symbols', symbols.join(','))
+      const response = await fetch(endpoint)
+      const payload = await response.json()
+
+      if (manualStocksRequestIdRef.current !== requestId) {
         return
       }
 
-      setLoading(true)
-      setError('')
-      setWarning('')
-      try {
-        const endpoint = apiEndpoint('/api/stocks')
-        endpoint.searchParams.set('symbols', symbols.join(','))
-        const response = await fetch(endpoint)
-        const payload = await response.json()
-
-        if (!response.ok) {
-          setStocks([])
-          setError(payload.error ?? 'Could not load stock data.')
-          return
-        }
-
-        setStocks(payload.data ?? [])
-
-        if (!payload.data?.length) {
-          setError(
-            payload.failed?.[0] ??
-              'Could not load stock data. Please try again in a few seconds.'
-          )
-          return
-        }
-
-        if (payload.failed?.length) {
-          setWarning('Partial results loaded. Some tickers may be invalid.')
-        }
-      } catch {
+      if (!response.ok) {
         setStocks([])
-        setError(
-          import.meta.env.PROD && !hasApiOriginConfigured()
-            ? 'No API URL in this build. Set VITE_API_ORIGIN (https backend URL) in GitHub and redeploy.'
-            : 'Could not connect to local server. Run npm run dev to start frontend and API.'
-        )
-      } finally {
-        setLoading(false)
+        setError(payload.error ?? 'Could not load stock data.')
+        return
       }
-    },
-    []
-  )
 
-  const loadUniverseStocks = useCallback(async () => {
+      setStocks(payload.data ?? [])
+
+      if (!payload.data?.length) {
+        const firstFailure = payload.failed?.[0] ?? ''
+        const isRateLimit = /\b429\b|rate limit|too many requests/i.test(firstFailure)
+        setError(
+          isRateLimit
+            ? `Yahoo Finance is rate-limiting requests right now (HTTP 429). This is temporary. Try again in a minute, or set FMP_API_KEY in the server .env to avoid depending on Yahoo. Tickers requested: ${symbols.join(', ')}`
+            : firstFailure ||
+                'Could not load stock data. Please try again in a few seconds.'
+        )
+        return
+      }
+
+      if (payload.failed?.length) {
+        setWarning('Partial results loaded. Some tickers may be invalid.')
+      }
+    } catch {
+      if (manualStocksRequestIdRef.current !== requestId) {
+        return
+      }
+      setStocks([])
+      setError(
+        import.meta.env.PROD && !hasApiOriginConfigured()
+          ? 'No API URL in this build. Set VITE_API_ORIGIN (https backend URL) in GitHub and redeploy.'
+          : 'Could not connect to local server. Run npm run dev to start frontend and API.'
+      )
+    } finally {
+      if (manualStocksRequestIdRef.current === requestId) {
+        setManualStocksLoading(false)
+      }
+    }
+  }, [])
+
+  const loadUniverseStocks = useCallback(async ({ forceRefresh = false } = {}) => {
     if (mode !== 'universe') {
       return
     }
 
     if (!filteredUniverse.length) {
       setStocks([])
-      setUniverseProgress({ completed: 0, total: 0 })
+      setUniverseProgress({ completed: 0, total: 0, symbolsLoaded: 0, symbolsTotal: 0 })
       return
+    }
+
+    const isFullUniverse = filteredUniverse.length === marketUniverse.length
+
+    const applyCachedSnapshot = (cached: MarketSnapshotCache, sourceLabel: string) => {
+      setStocks(cached.data)
+      setUniverseProgress({
+        completed: 1,
+        total: 1,
+        symbolsLoaded: cached.data.length,
+        symbolsTotal: cached.data.length,
+      })
+      setWarning(
+        `Showing cached data from ${sourceLabel} (${Math.round((Date.now() - cached.savedAt) / 1000)}s ago). Click "Refresh data" to update.`
+      )
+    }
+
+    if (!forceRefresh && isFullUniverse) {
+      const localCached = readMarketSnapshotCache()
+      if (localCached) {
+        applyCachedSnapshot(localCached, 'browser')
+        return
+      }
+
+      try {
+        const response = await fetch(apiUrl('/api/market-snapshot/latest'))
+        const body = await response.json()
+        if (response.ok && body.cache === 'hit' && body.data?.length) {
+          const serverCached = { data: body.data, savedAt: body.savedAt }
+          writeMarketSnapshotCache(body.data)
+          applyCachedSnapshot(serverCached, 'server')
+          return
+        }
+      } catch {
+        // Fall through to SSE build.
+      }
     }
 
     const requestId = universeRequestIdRef.current + 1
     universeRequestIdRef.current = requestId
 
-    const symbols = filteredUniverse.map((item) => item.symbol)
-    const symbolBatches = []
-    for (let index = 0; index < symbols.length; index += MAX_SYMBOLS) {
-      symbolBatches.push(symbols.slice(index, index + MAX_SYMBOLS))
-    }
-
-    setLoading(true)
+    setFullMarketStocksLoading(true)
     setError('')
     setWarning('')
-    setUniverseProgress({ completed: 0, total: symbolBatches.length })
-
-    const aggregatedStocks = []
-    const failedMessages = []
+    setUniverseProgress({ completed: 0, total: 0, symbolsLoaded: 0, symbolsTotal: 0 })
 
     try {
-      let nextBatchIndex = 0
+      if (isFullUniverse) {
+        const url = forceRefresh
+          ? apiUrl('/api/market-snapshot?force=1')
+          : apiUrl('/api/market-snapshot')
+        const eventSource = new EventSource(url)
+        const aggregatedStocks: StockQuote[] = []
 
-      async function runBatchWorker() {
-        while (nextBatchIndex < symbolBatches.length) {
-          if (universeRequestIdRef.current !== requestId) {
-            return
-          }
-
-          const batch = symbolBatches[nextBatchIndex]
-          nextBatchIndex += 1
-
-          try {
-            const endpoint = apiEndpoint('/api/stocks')
-            endpoint.searchParams.set('symbols', batch.join(','))
-
-            const response = await fetch(endpoint)
-            const payload = await response.json()
-
+        await new Promise<void>((resolve, reject) => {
+          eventSource.onmessage = (event) => {
             if (universeRequestIdRef.current !== requestId) {
+              eventSource.close()
+              resolve()
               return
             }
 
-            if (!response.ok) {
-              failedMessages.push(payload.error ?? 'Could not load one stock batch.')
-            } else {
-              aggregatedStocks.push(...(payload.data ?? []))
-              setStocks([...aggregatedStocks])
+            try {
+              const msg = JSON.parse(event.data)
 
-              if (payload.failed?.length) {
-                failedMessages.push(...payload.failed)
+              if (msg.type === 'started') {
+                setUniverseProgress((progress) => ({
+                  ...progress,
+                  total: msg.total,
+                  symbolsTotal: msg.symbolsTotal,
+                }))
+              } else if (msg.type === 'progress') {
+                aggregatedStocks.push(...(msg.batchData ?? []))
+                setStocks([...aggregatedStocks])
+                setUniverseProgress({
+                  completed: msg.completed,
+                  total: msg.total,
+                  symbolsLoaded: msg.symbolsLoaded ?? aggregatedStocks.length,
+                  symbolsTotal: msg.symbolsTotal ?? aggregatedStocks.length,
+                })
+              } else if (msg.type === 'done') {
+                eventSource.close()
+                setStocks([...aggregatedStocks])
+
+                if (aggregatedStocks.length) {
+                  writeMarketSnapshotCache(aggregatedStocks)
+                }
+
+                if (!aggregatedStocks.length) {
+                  setError('Could not load stock data for the selected universe.')
+                } else if (msg.failed > 0) {
+                  setWarning(`Partial results loaded. Failed symbols: ${msg.failed}`)
+                } else if (msg.cache === 'hit') {
+                  setWarning('')
+                }
+                resolve()
               }
+            } catch {
+              eventSource.close()
+              reject(new Error('Malformed SSE data'))
             }
-          } catch {
-            failedMessages.push('Could not load one stock batch.')
-          } finally {
-            if (universeRequestIdRef.current === requestId) {
-              setUniverseProgress((progress) => ({
-                ...progress,
-                completed: progress.completed + 1,
-              }))
+          }
+
+          eventSource.onerror = () => {
+            eventSource.close()
+            reject(new Error('SSE connection failed'))
+          }
+        })
+      } else {
+        const symbols = filteredUniverse.map((item) => item.symbol)
+        const symbolBatches: string[][] = []
+        for (let index = 0; index < symbols.length; index += MAX_SYMBOLS) {
+          symbolBatches.push(symbols.slice(index, index + MAX_SYMBOLS))
+        }
+
+        setUniverseProgress({ completed: 0, total: symbolBatches.length, symbolsLoaded: 0, symbolsTotal: symbols.length })
+        const aggregatedStocks: StockQuote[] = []
+        const failedMessages: string[] = []
+
+        let nextBatchIndex = 0
+
+        async function runBatchWorker() {
+          while (nextBatchIndex < symbolBatches.length) {
+            if (universeRequestIdRef.current !== requestId) return
+
+            const batch = symbolBatches[nextBatchIndex]
+            nextBatchIndex += 1
+
+            try {
+              const endpoint = apiEndpoint('/api/stocks')
+              endpoint.searchParams.set('symbols', batch.join(','))
+              const response = await fetch(endpoint)
+              const payload = await response.json()
+
+              if (universeRequestIdRef.current !== requestId) return
+
+              if (!response.ok) {
+                failedMessages.push(payload.error ?? 'Could not load one stock batch.')
+              } else {
+                aggregatedStocks.push(...(payload.data ?? []))
+                setStocks([...aggregatedStocks])
+                if (payload.failed?.length) failedMessages.push(...payload.failed)
+              }
+            } catch {
+              failedMessages.push('Could not load one stock batch.')
+            } finally {
+              if (universeRequestIdRef.current === requestId) {
+                setUniverseProgress((progress) => ({
+                  ...progress,
+                  completed: progress.completed + 1,
+                  symbolsLoaded: aggregatedStocks.length,
+                  symbolsTotal: symbols.length,
+                }))
+              }
             }
           }
         }
-      }
 
-      const workers = Array.from(
-        { length: Math.min(BATCH_CONCURRENCY, symbolBatches.length) },
-        () => runBatchWorker()
-      )
-      await Promise.all(workers)
-
-      if (universeRequestIdRef.current !== requestId) {
-        return
-      }
-
-      setStocks(aggregatedStocks)
-
-      if (!aggregatedStocks.length) {
-        setError(
-          failedMessages[0] ??
-            'Could not load stock data for the selected universe.'
+        await Promise.all(
+          Array.from({ length: Math.min(BATCH_CONCURRENCY, symbolBatches.length) }, () => runBatchWorker())
         )
-      } else if (failedMessages.length) {
-        setWarning(
-          `Partial results loaded. Failed symbols: ${failedMessages.length}`
-        )
+
+        if (universeRequestIdRef.current !== requestId) return
+
+        setStocks(aggregatedStocks)
+        if (!aggregatedStocks.length) {
+          setError(failedMessages[0] ?? 'Could not load stock data for the selected universe.')
+        } else if (failedMessages.length) {
+          setWarning(`Partial results loaded. Failed symbols: ${failedMessages.length}`)
+        }
       }
     } catch {
-      if (universeRequestIdRef.current !== requestId) {
-        return
-      }
+      if (universeRequestIdRef.current !== requestId) return
 
       setStocks([])
-      setUniverseProgress({ completed: 0, total: symbolBatches.length })
       setError(
         import.meta.env.PROD && !hasApiOriginConfigured()
           ? 'No API URL in this build. Set VITE_API_ORIGIN (https backend URL) in GitHub and redeploy.'
@@ -557,10 +901,10 @@ function App() {
       )
     } finally {
       if (universeRequestIdRef.current === requestId) {
-        setLoading(false)
+        setFullMarketStocksLoading(false)
       }
     }
-  }, [filteredUniverse, mode])
+  }, [filteredUniverse, marketUniverse.length, mode])
 
   useEffect(() => {
     if (hasLoadedUniverseRef.current) {
@@ -577,6 +921,34 @@ function App() {
     }
   }, [universeSearch, mode, trendFilter, countryFilter])
 
+  // Manual mode: cancel in-flight full-market fetches and clear bulk results.
+  // Full market: cancel any in-flight manual quote request.
+  useEffect(() => {
+    if (mode === 'manual') {
+      universeRequestIdRef.current += 1
+      setFullMarketStocksLoading(false)
+      setStocks([])
+      setUniverseProgress({ completed: 0, total: 0, symbolsLoaded: 0, symbolsTotal: 0 })
+      setError('')
+      setWarning('')
+    } else {
+      manualStocksRequestIdRef.current += 1
+      setManualStocksLoading(false)
+    }
+  }, [mode])
+
+  useEffect(() => {
+    if (mode !== 'manual') {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void fetchManualStocks(symbolsInput, { fromSubmit: false })
+    }, MANUAL_STOCKS_DEBOUNCE_MS)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [mode, symbolsInput, fetchManualStocks])
+
   useEffect(() => {
     if (mode !== 'universe') {
       return
@@ -589,29 +961,73 @@ function App() {
     return () => window.clearTimeout(timeoutId)
   }, [loadUniverseStocks, mode])
 
-  function handleSubmit(event) {
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    loadStocks(symbolsInput)
+    void fetchManualStocks(symbolsInput, { fromSubmit: true })
+  }
+
+  function selectManualMode() {
+    if (mode !== 'manual') {
+      setSymbolsInput('')
+    }
+    setMode('manual')
   }
 
   const progressPercent =
-    universeProgress.total > 0
-      ? Math.round((universeProgress.completed / universeProgress.total) * 100)
-      : 0
+    universeProgress.symbolsTotal > 0
+      ? Math.round((universeProgress.symbolsLoaded / universeProgress.symbolsTotal) * 100)
+      : universeProgress.total > 0
+        ? Math.round((universeProgress.completed / universeProgress.total) * 100)
+        : 0
 
   function handleBackToScreener() {
     setFundamentalsSymbol(null)
+    setTechnicalSymbol(null)
     const url = new URL(window.location.href)
     url.searchParams.delete('fundamentals')
+    url.searchParams.delete('technical')
     url.searchParams.delete('symbol')
     window.history.replaceState({}, '', `${url.pathname}${url.search}`)
   }
 
-  function openFundamentalsInNewTab(symbol) {
+  function openFundamentalsInNewTab(symbol: string) {
     const url = new URL(window.location.href)
+    url.searchParams.delete('technical')
     url.searchParams.set('fundamentals', '1')
     url.searchParams.set('symbol', symbol)
     window.open(url.toString(), '_blank', 'noopener,noreferrer')
+  }
+
+  function openTechnicalInNewTab(symbol: string) {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('fundamentals')
+    url.searchParams.set('technical', '1')
+    url.searchParams.set('symbol', symbol)
+    window.open(url.toString(), '_blank', 'noopener,noreferrer')
+  }
+
+  const screenerTableLoading =
+    mode === 'manual' ? manualStocksLoading : fullMarketStocksLoading
+
+  if (technicalSymbol) {
+    return (
+      <>
+        <header className="app-header">
+          <div className="app-header-inner">
+            <h1>
+              Technical analysis
+              <span className="app-header-subtitle">Indicadores + lectura AI</span>
+            </h1>
+          </div>
+        </header>
+        <main className="page">
+          <TechnicalAnalysisView
+            symbol={technicalSymbol}
+            onBackToScreener={handleBackToScreener}
+          />
+        </main>
+      </>
+    )
   }
 
   if (fundamentalsSymbol) {
@@ -665,7 +1081,7 @@ function App() {
             <button
               type="button"
               className={`chip ${mode === 'manual' ? 'active' : ''}`}
-              onClick={() => setMode('manual')}
+              onClick={selectManualMode}
             >
               Manual tickers
             </button>
@@ -695,7 +1111,8 @@ function App() {
                   <button
                     type="button"
                     className="btn btn-secondary"
-                    onClick={() => void loadUniverse()}
+                    onClick={() => void loadUniverse({ force: true })}
+                    title="Vuelve a bajar el listing oficial de NASDAQ y NYSE (ignora cache server-side)"
                   >
                     {universeLoading ? 'Refreshing...' : 'Refresh universe'}
                   </button>
@@ -740,8 +1157,12 @@ function App() {
                   onChange={(event) => setSymbolsInput(event.target.value)}
                   placeholder="AAPL, MSFT, NVDA"
                 />
-                <button type="submit" className="btn btn-primary" disabled={loading}>
-                  {loading ? 'Loading...' : 'Update'}
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={manualStocksLoading}
+                >
+                  {manualStocksLoading ? 'Loading...' : 'Update'}
                 </button>
               </div>
             </form>
@@ -827,19 +1248,41 @@ function App() {
 
           {universeError ? <p className="status error">{universeError}</p> : null}
           {error ? <p className="status error">{error}</p> : null}
-          {warning ? <p className="status warning">{warning}</p> : null}
-          {mode === 'universe' && loading && universeProgress.total > 0 ? (
+          {warning ? (
+            <p className="status warning">
+              {warning}
+              {warning.includes('cached') ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm refresh-inline"
+                  onClick={() => {
+                    localStorage.removeItem(MARKET_SNAPSHOT_STORAGE_KEY)
+                    void loadUniverseStocks({ forceRefresh: true })
+                  }}
+                >
+                  Refresh data
+                </button>
+              ) : null}
+            </p>
+          ) : null}
+          {mode === 'universe' && fullMarketStocksLoading ? (
             <>
               <p className="status loading">
-                Loading full market data... batch {universeProgress.completed} /{' '}
-                {universeProgress.total}
+                {universeProgress.symbolsTotal > 0
+                  ? `Loading market data… ${universeProgress.symbolsLoaded.toLocaleString()} / ${universeProgress.symbolsTotal.toLocaleString()} symbols`
+                  : 'Starting market data load…'}
+                {universeProgress.symbolsTotal > 0 && universeProgress.total > 0
+                  ? ` (${universeProgress.completed}/${universeProgress.total} batches)`
+                  : ''}
               </p>
+              {universeProgress.total > 0 || universeProgress.symbolsTotal > 0 ? (
               <div className="progress-bar-wrapper">
                 <div
                   className="progress-bar-fill"
                   style={{ width: `${progressPercent}%` }}
                 />
               </div>
+              ) : null}
             </>
           ) : null}
         </section>
@@ -997,14 +1440,16 @@ function App() {
                       <div className="recommendation-content">
                         <div className="recommendation-main">
                           <h3>
-                            <button
-                              type="button"
+                            <TickerActionsMenu
+                              symbol={stock.symbol}
                               className="ticker-link ticker-link-inline"
-                              onClick={() => openFundamentalsInNewTab(stock.symbol)}
-                              title="Open fundamentals (FMP) in a new tab"
-                            >
-                              {stock.symbol}
-                            </button>{' '}
+                              onOpenFundamentals={() =>
+                                openFundamentalsInNewTab(stock.symbol)
+                              }
+                              onOpenTechnical={() =>
+                                openTechnicalInNewTab(stock.symbol)
+                              }
+                            />{' '}
                             <small>{cleanCompanyName(stock.name) ?? 'N/A'}</small>
                           </h3>
                           <div className="rec-meta">
@@ -1080,10 +1525,42 @@ function App() {
                     <th className="col-name">Name</th>
                     <th className="col-exchange">Exchange</th>
                     <th className="col-price">Price</th>
-                    <th className="col-metric">1D</th>
-                    <th className="col-metric">1M</th>
-                    <th className="col-metric">1Y</th>
-                    <th className="col-trend">Trend Signal</th>
+                    <th className="col-metric">
+                      <SortableHeader
+                        metricId="day"
+                        label="1D"
+                        sortMetric={sortMetric}
+                        sortDirection={sortDirection}
+                        onSort={handleSort}
+                      />
+                    </th>
+                    <th className="col-metric">
+                      <SortableHeader
+                        metricId="month"
+                        label="1M"
+                        sortMetric={sortMetric}
+                        sortDirection={sortDirection}
+                        onSort={handleSort}
+                      />
+                    </th>
+                    <th className="col-metric">
+                      <SortableHeader
+                        metricId="year"
+                        label="1Y"
+                        sortMetric={sortMetric}
+                        sortDirection={sortDirection}
+                        onSort={handleSort}
+                      />
+                    </th>
+                    <th className="col-trend">
+                      <SortableHeader
+                        metricId="trend"
+                        label="Trend Signal"
+                        sortMetric={sortMetric}
+                        sortDirection={sortDirection}
+                        onSort={handleSort}
+                      />
+                    </th>
                     <th className="col-date">Updated</th>
                   </tr>
                 </thead>
@@ -1091,14 +1568,15 @@ function App() {
                   {pagedStocks.map((stock) => (
                     <tr key={stock.symbol}>
                       <td className="col-ticker">
-                        <button
-                          type="button"
-                          className="ticker-link"
-                          onClick={() => openFundamentalsInNewTab(stock.symbol)}
-                          title="Open fundamentals (FMP) in a new tab"
-                        >
-                          {stock.symbol}
-                        </button>
+                        <TickerActionsMenu
+                          symbol={stock.symbol}
+                          onOpenFundamentals={() =>
+                            openFundamentalsInNewTab(stock.symbol)
+                          }
+                          onOpenTechnical={() =>
+                            openTechnicalInNewTab(stock.symbol)
+                          }
+                        />
                       </td>
                       <td
                         className="cell-name col-name"
@@ -1133,13 +1611,13 @@ function App() {
                 </tbody>
               </table>
 
-              {!loading && !pagedStocks.length && !error ? (
+              {!screenerTableLoading && !pagedStocks.length && !error ? (
                 <div className="empty-state">
                   <p>No data to display.</p>
                 </div>
               ) : null}
               {mode === 'universe' &&
-              loading &&
+              fullMarketStocksLoading &&
               (trendFilter !== 'all' || countryFilter !== 'all') &&
               !pagedStocks.length &&
               sortedStocks.length > 0 ? (
