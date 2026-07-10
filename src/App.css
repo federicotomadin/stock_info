@@ -264,6 +264,13 @@
   margin-right: 0.25rem;
 }
 
+.load-more-sentinel {
+  padding: 1rem;
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Workspace Tabs                                                     */
 /* ------------------------------------------------------------------ */

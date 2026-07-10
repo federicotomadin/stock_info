@@ -16,6 +16,7 @@ import {
   MARKET_SNAPSHOT_STORAGE_KEY,
   MAX_SYMBOLS,
   PAGE_SIZE,
+  SCROLLER_PAGE_SIZE,
 } from './constants/app'
 import {
   cleanCompanyName,
@@ -74,6 +75,34 @@ function writeMarketSnapshotCache(data: StockQuote[]) {
     )
   } catch {
     // Quota exceeded or storage unavailable.
+  }
+}
+
+interface ScreenerApiRow {
+  symbol: string
+  name: string
+  exchange: string
+  country: CountryLabel
+  price: number
+  updatedAt: string
+  dayChange: number | null
+  monthChange: number | null
+  yearChange: number | null
+  trend: TrendAnalysis
+}
+
+function mapScreenerRow(row: ScreenerApiRow): EnrichedStock {
+  return {
+    symbol: row.symbol,
+    name: row.name,
+    exchange: row.exchange,
+    price: row.price,
+    updatedAt: row.updatedAt,
+    dayChange: row.dayChange,
+    monthChange: row.monthChange,
+    yearChange: row.yearChange,
+    country: row.country,
+    trend: row.trend,
   }
 }
 
@@ -361,6 +390,12 @@ function App() {
   const [universeLoading, setUniverseLoading] = useState(false)
   const [universeSearch, setUniverseSearch] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
+  const [dbScreenerEnabled, setDbScreenerEnabled] = useState<boolean | null>(null)
+  const [screenerRows, setScreenerRows] = useState<EnrichedStock[]>([])
+  const [screenerTotal, setScreenerTotal] = useState(0)
+  const [screenerLoadingMore, setScreenerLoadingMore] = useState(false)
+  const [screenerHasMore, setScreenerHasMore] = useState(false)
+  const [recommendationPool, setRecommendationPool] = useState<EnrichedStock[]>([])
   const [fullMarketStocksLoading, setFullMarketStocksLoading] = useState(false)
   const [manualStocksLoading, setManualStocksLoading] = useState(false)
   const [error, setError] = useState('')
@@ -392,6 +427,11 @@ function App() {
   const universeRequestIdRef = useRef(0)
   const manualStocksRequestIdRef = useRef(0)
   const profileRequestIdRef = useRef(0)
+  const screenerRequestIdRef = useRef(0)
+  const screenerOffsetRef = useRef(0)
+  const loadMoreRef = useRef<HTMLDivElement | null>(null)
+
+  const useDbScreener = mode === 'universe' && dbScreenerEnabled === true
 
   const filteredUniverse = useMemo(() => {
     const query = universeSearch.trim().toUpperCase()
@@ -499,7 +539,13 @@ function App() {
   }, [investmentExperience, investmentGoals, investmentHorizon, riskTolerance])
 
   const recommendedStocks = useMemo(() => {
-    const source = countryFilteredStocks.length ? countryFilteredStocks : sortedStocks
+    const source = useDbScreener
+      ? recommendationPool.length
+        ? recommendationPool
+        : screenerRows
+      : countryFilteredStocks.length
+        ? countryFilteredStocks
+        : sortedStocks
 
     return source
       .filter((stock) => stock.trend?.label !== 'Downtrend')
@@ -513,7 +559,15 @@ function App() {
       })
       .sort((a, b) => b.recommendationScore - a.recommendationScore)
       .slice(0, 8)
-  }, [countryFilteredStocks, investmentGoals, riskProfile, sortedStocks])
+  }, [
+    countryFilteredStocks,
+    investmentGoals,
+    recommendationPool,
+    riskProfile,
+    screenerRows,
+    sortedStocks,
+    useDbScreener,
+  ])
 
   useEffect(() => {
     if (workspaceTab !== 'profile') {
@@ -566,6 +620,7 @@ function App() {
       setSortMetric(metricId)
       setSortDirection('desc')
     }
+    screenerOffsetRef.current = 0
   }
 
   function toggleGoal(goalId: InvestmentGoalId) {
@@ -580,8 +635,8 @@ function App() {
     })
   }
 
-  const pagedStocks = useMemo(() => {
-    if (mode !== 'universe') {
+  const displayStocks = useMemo(() => {
+    if (mode === 'manual') {
       const requestedSymbols = new Set(parseSymbols(symbolsInput))
       if (!requestedSymbols.size) {
         return []
@@ -591,17 +646,104 @@ function App() {
       )
     }
 
+    if (useDbScreener) {
+      return screenerRows
+    }
+
     const start = (currentPage - 1) * PAGE_SIZE
     return countryFilteredStocks.slice(start, start + PAGE_SIZE)
-  }, [countryFilteredStocks, currentPage, mode, symbolsInput])
+  }, [
+    countryFilteredStocks,
+    currentPage,
+    mode,
+    screenerRows,
+    symbolsInput,
+    useDbScreener,
+  ])
+
+  const pagedStocks = displayStocks
 
   const totalPages = useMemo(() => {
-    if (mode !== 'universe') {
+    if (mode !== 'universe' || useDbScreener) {
       return 1
     }
 
     return Math.max(1, Math.ceil(countryFilteredStocks.length / PAGE_SIZE))
-  }, [countryFilteredStocks.length, mode])
+  }, [countryFilteredStocks.length, mode, useDbScreener])
+
+  const fetchScreenerPage = useCallback(
+    async ({ reset = false }: { reset?: boolean } = {}) => {
+      if (!useDbScreener) {
+        return
+      }
+
+      const requestId = screenerRequestIdRef.current + 1
+      screenerRequestIdRef.current = requestId
+
+      const offset = reset ? 0 : screenerOffsetRef.current
+      const loadingMore = !reset && offset > 0
+
+      if (reset) {
+        setFullMarketStocksLoading(true)
+        setScreenerRows([])
+        setScreenerHasMore(false)
+        screenerOffsetRef.current = 0
+      } else {
+        setScreenerLoadingMore(true)
+      }
+
+      setError('')
+
+      try {
+        const endpoint = apiEndpoint('/api/screener')
+        endpoint.searchParams.set('offset', String(offset))
+        endpoint.searchParams.set('limit', String(SCROLLER_PAGE_SIZE))
+        endpoint.searchParams.set('sort', sortMetric)
+        endpoint.searchParams.set('dir', sortDirection)
+        if (universeSearch.trim()) {
+          endpoint.searchParams.set('search', universeSearch.trim())
+        }
+        if (trendFilter !== 'all') {
+          endpoint.searchParams.set('trend', trendFilter)
+        }
+        if (countryFilter !== 'all') {
+          endpoint.searchParams.set('country', countryFilter)
+        }
+
+        const response = await fetch(endpoint)
+        const payload = await response.json()
+
+        if (screenerRequestIdRef.current !== requestId) {
+          return
+        }
+
+        if (!response.ok) {
+          setError(payload.error ?? 'Could not load screener data.')
+          return
+        }
+
+        const mapped = ((payload.data ?? []) as ScreenerApiRow[]).map(mapScreenerRow)
+        const total = Number(payload.total) || 0
+        const nextOffset = offset + mapped.length
+
+        screenerOffsetRef.current = nextOffset
+        setScreenerTotal(total)
+        setScreenerHasMore(nextOffset < total)
+        setScreenerRows((current) => (reset ? mapped : [...current, ...mapped]))
+      } catch {
+        if (screenerRequestIdRef.current !== requestId) {
+          return
+        }
+        setError('Could not load screener data from database.')
+      } finally {
+        if (screenerRequestIdRef.current === requestId) {
+          setFullMarketStocksLoading(false)
+          setScreenerLoadingMore(false)
+        }
+      }
+    },
+    [countryFilter, sortDirection, sortMetric, trendFilter, universeSearch, useDbScreener]
+  )
 
   const loadUniverse = useCallback(async ({ force = false } = {}) => {
     setUniverseLoading(true)
@@ -712,6 +854,18 @@ function App() {
 
   const loadUniverseStocks = useCallback(async ({ forceRefresh = false } = {}) => {
     if (mode !== 'universe') {
+      return
+    }
+
+    if (useDbScreener) {
+      if (forceRefresh) {
+        try {
+          await fetch(apiUrl('/api/screener/sync?force=1'), { method: 'POST' })
+        } catch {
+          // Sync trigger is best-effort; screener still reads cached DB rows.
+        }
+      }
+      await fetchScreenerPage({ reset: true })
       return
     }
 
@@ -904,7 +1058,7 @@ function App() {
         setFullMarketStocksLoading(false)
       }
     }
-  }, [filteredUniverse, marketUniverse.length, mode])
+  }, [fetchScreenerPage, filteredUniverse, marketUniverse.length, mode, useDbScreener])
 
   useEffect(() => {
     if (hasLoadedUniverseRef.current) {
@@ -914,6 +1068,122 @@ function App() {
     hasLoadedUniverseRef.current = true
     void loadUniverse()
   }, [loadUniverse])
+
+  useEffect(() => {
+    void fetch(apiUrl('/api/screener/status'))
+      .then((response) => response.json())
+      .then((body) => setDbScreenerEnabled(Boolean(body.enabled)))
+      .catch(() => setDbScreenerEnabled(false))
+  }, [])
+
+  useEffect(() => {
+    if (mode !== 'universe' || dbScreenerEnabled === null) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      if (dbScreenerEnabled) {
+        void fetchScreenerPage({ reset: true })
+      } else {
+        void loadUniverseStocks()
+      }
+    }, 350)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [
+    countryFilter,
+    dbScreenerEnabled,
+    fetchScreenerPage,
+    loadUniverseStocks,
+    mode,
+    sortDirection,
+    sortMetric,
+    trendFilter,
+    universeSearch,
+  ])
+
+  useEffect(() => {
+    if (!useDbScreener) {
+      setRecommendationPool([])
+      return
+    }
+
+    const endpoint = apiEndpoint('/api/screener')
+    endpoint.searchParams.set('limit', '300')
+    endpoint.searchParams.set('sort', 'year')
+    endpoint.searchParams.set('dir', 'desc')
+
+    void fetch(endpoint)
+      .then((response) => response.json())
+      .then((payload) => {
+        setRecommendationPool(((payload.data ?? []) as ScreenerApiRow[]).map(mapScreenerRow))
+      })
+      .catch(() => setRecommendationPool([]))
+  }, [screenerTotal, useDbScreener])
+
+  useEffect(() => {
+    if (!useDbScreener || !fullMarketStocksLoading) {
+      return
+    }
+
+    const intervalId = window.setInterval(() => {
+      void fetch(apiUrl('/api/screener/status'))
+        .then((response) => response.json())
+        .then((body) => {
+          if (body.progress) {
+            setUniverseProgress({
+              completed: body.progress.symbolsLoaded,
+              total: body.progress.symbolsTotal,
+              symbolsLoaded: body.progress.symbolsLoaded,
+              symbolsTotal: body.progress.symbolsTotal,
+            })
+          }
+          if (!body.syncing && Number(body.totalQuotes) > 0 && screenerRows.length === 0) {
+            void fetchScreenerPage({ reset: true })
+          }
+        })
+        .catch(() => {
+          // Ignore polling errors.
+        })
+    }, 2500)
+
+    return () => window.clearInterval(intervalId)
+  }, [fetchScreenerPage, fullMarketStocksLoading, screenerRows.length, useDbScreener])
+
+  useEffect(() => {
+    if (!useDbScreener) {
+      return
+    }
+
+    const node = loadMoreRef.current
+    if (!node) {
+      return
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (
+          entries[0]?.isIntersecting &&
+          screenerHasMore &&
+          !screenerLoadingMore &&
+          !fullMarketStocksLoading
+        ) {
+          void fetchScreenerPage({ reset: false })
+        }
+      },
+      { rootMargin: '240px' }
+    )
+
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [
+    fetchScreenerPage,
+    fullMarketStocksLoading,
+    screenerHasMore,
+    screenerLoadingMore,
+    useDbScreener,
+    screenerRows.length,
+  ])
 
   useEffect(() => {
     if (mode !== 'manual') {
@@ -949,17 +1219,6 @@ function App() {
     return () => window.clearTimeout(timeoutId)
   }, [mode, symbolsInput, fetchManualStocks])
 
-  useEffect(() => {
-    if (mode !== 'universe') {
-      return
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      void loadUniverseStocks()
-    }, 350)
-
-    return () => window.clearTimeout(timeoutId)
-  }, [loadUniverseStocks, mode])
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -1007,7 +1266,11 @@ function App() {
   }
 
   const screenerTableLoading =
-    mode === 'manual' ? manualStocksLoading : fullMarketStocksLoading
+    mode === 'manual'
+      ? manualStocksLoading
+      : useDbScreener
+        ? fullMarketStocksLoading && screenerRows.length === 0
+        : fullMarketStocksLoading
 
   if (technicalSymbol) {
     return (
@@ -1120,27 +1383,36 @@ function App() {
               </form>
 
               <div className="pagination">
-                <span className="pagination-label">
-                  Page {currentPage} of {totalPages}
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={currentPage <= 1}
-                  onClick={() => setCurrentPage((value) => Math.max(1, value - 1))}
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={currentPage >= totalPages}
-                  onClick={() =>
-                    setCurrentPage((value) => Math.min(totalPages, value + 1))
-                  }
-                >
-                  Next
-                </button>
+                {useDbScreener ? (
+                  <span className="pagination-label">
+                    Showing {screenerRows.length.toLocaleString()} of{' '}
+                    {screenerTotal.toLocaleString()} · sorted in database
+                  </span>
+                ) : (
+                  <>
+                    <span className="pagination-label">
+                      Page {currentPage} of {totalPages}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={currentPage <= 1}
+                      onClick={() => setCurrentPage((value) => Math.max(1, value - 1))}
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={currentPage >= totalPages}
+                      onClick={() =>
+                        setCurrentPage((value) => Math.min(totalPages, value + 1))
+                      }
+                    >
+                      Next
+                    </button>
+                  </>
+                )}
               </div>
             </>
           ) : null}
@@ -1175,7 +1447,10 @@ function App() {
                 key={option.id}
                 className={`chip ${sortMetric === option.id ? 'active' : ''}`}
                 type="button"
-                onClick={() => setSortMetric(option.id)}
+                onClick={() => {
+                  setSortMetric(option.id)
+                  screenerOffsetRef.current = 0
+                }}
               >
                 {option.label}
               </button>
@@ -1183,11 +1458,10 @@ function App() {
             <button
               type="button"
               className="chip"
-              onClick={() =>
-                setSortDirection((current) =>
-                  current === 'desc' ? 'asc' : 'desc'
-                )
-              }
+              onClick={() => {
+                setSortDirection((current) => (current === 'desc' ? 'asc' : 'desc'))
+                screenerOffsetRef.current = 0
+              }}
             >
               {sortDirection === 'desc' ? 'Highest first' : 'Lowest first'}
             </button>
@@ -1198,7 +1472,10 @@ function App() {
             <button
               type="button"
               className={`chip ${trendFilter === 'all' ? 'active' : ''}`}
-              onClick={() => setTrendFilter('all')}
+              onClick={() => {
+                setTrendFilter('all')
+                screenerOffsetRef.current = 0
+              }}
               title="Show all trend labels"
             >
               All
@@ -1208,7 +1485,10 @@ function App() {
                 key={label}
                 type="button"
                 className={`chip ${trendFilter === label ? 'active' : ''}`}
-                onClick={() => setTrendFilter(label)}
+                onClick={() => {
+                  setTrendFilter(label)
+                  screenerOffsetRef.current = 0
+                }}
                 title={TREND_MEANINGS[label]}
               >
                 {label}
@@ -1228,7 +1508,10 @@ function App() {
             <button
               type="button"
               className={`chip ${countryFilter === 'all' ? 'active' : ''}`}
-              onClick={() => setCountryFilter('all')}
+              onClick={() => {
+                setCountryFilter('all')
+                screenerOffsetRef.current = 0
+              }}
               title="Show all countries"
             >
               All
@@ -1238,7 +1521,10 @@ function App() {
                 key={label}
                 type="button"
                 className={`chip ${countryFilter === label ? 'active' : ''}`}
-                onClick={() => setCountryFilter(label)}
+                onClick={() => {
+                  setCountryFilter(label)
+                  screenerOffsetRef.current = 0
+                }}
                 title={`Filter by ${label}`}
               >
                 {label}
@@ -1616,7 +1902,13 @@ function App() {
                   <p>No data to display.</p>
                 </div>
               ) : null}
+              {useDbScreener && screenerHasMore ? (
+                <div ref={loadMoreRef} className="load-more-sentinel" aria-live="polite">
+                  {screenerLoadingMore ? 'Loading more…' : 'Scroll for more rows'}
+                </div>
+              ) : null}
               {mode === 'universe' &&
+              !useDbScreener &&
               fullMarketStocksLoading &&
               (trendFilter !== 'all' || countryFilter !== 'all') &&
               !pagedStocks.length &&

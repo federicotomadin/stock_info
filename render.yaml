@@ -26,3 +26,7 @@ services:
         sync: false
       - key: AI_PROVIDER
         sync: false
+      # Optional PostgreSQL for paginated screener (/api/screener). Create a Render Postgres
+      # instance and set DATABASE_URL to its internal connection string.
+      - key: DATABASE_URL
+        sync: false

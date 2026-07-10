@@ -1,4 +1,5 @@
 export const PAGE_SIZE = 20
+export const SCROLLER_PAGE_SIZE = 50
 export const MAX_SYMBOLS = 120
 export const BATCH_CONCURRENCY = 3
 export const MANUAL_STOCKS_DEBOUNCE_MS = 450

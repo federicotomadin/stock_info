@@ -1,0 +1,36 @@
+---
+description: Golden rule and diagnostic flow for React front-end performance
+alwaysApply: true
+---
+
+# React Front-end Performance
+
+**Golden rule:** `memo` / `useMemo` / `useCallback` are the **last resort**, not the first. Fix state architecture first (where it lives, who subscribes); memoization only patches symptoms.
+
+**Measure first:** Before touching code, you need data. Optimizing without measuring is the classic trap.
+
+## Diagnostic flow
+
+| Symptom | Skill |
+|---------|-------|
+| Long blank screen on open / poor LCP | `fe-perf-initial-load-bundle` |
+| UI frozen on typing, scroll, or click / poor INP | `fe-perf-runtime-rerenders` |
+| Duplicate fetches, huge datasets, WebSockets | `fe-perf-data-network` |
+| No baseline or can't reproduce the issue | `fe-perf-measure-first` |
+
+## Core Web Vitals (quick reference)
+
+| Metric | Good | Poor |
+|--------|------|------|
+| LCP | < 2.5s | > 4s |
+| INP | < 200ms | > 500ms |
+| CLS | < 0.1 | > 0.25 |
+
+## Priority order when generating code
+
+1. State architecture (placement, granular selectors)
+2. Long list virtualization
+3. Debounce / deferred updates on inputs
+4. Code splitting by route and feature
+5. TanStack Query for server state
+6. `memo` / `useMemo` / `useCallback` — only where the Profiler justifies it

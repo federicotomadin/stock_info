@@ -5,6 +5,15 @@ import express from 'express'
 import fs from 'node:fs/promises'
 import http from 'node:http'
 import path from 'node:path'
+import { isDatabaseEnabled } from './db/pool'
+import { initSchema } from './db/schema'
+import { getSyncStatus, queryScreener } from './db/queries'
+import {
+  getSyncProgress,
+  isSyncRunning,
+  scheduleMarketSync,
+  syncMarketData,
+} from './db/sync'
 
 const app = express()
 const PORT = Number(process.env.PORT || 9001)
@@ -488,24 +497,37 @@ async function fetchFmpStableJson(path, params = {}) {
   return payload
 }
 
+function isValidOhlcvCandle(candle) {
+  return (
+    Number.isFinite(candle.open) &&
+    Number.isFinite(candle.high) &&
+    Number.isFinite(candle.low) &&
+    Number.isFinite(candle.close) &&
+    candle.close > 0 &&
+    candle.high > 0 &&
+    candle.low > 0
+  )
+}
+
+function sanitizeOhlcvCandles(candles) {
+  const valid = candles.filter(isValidOhlcvCandle)
+  const dropped = candles.length - valid.length
+  return { candles: valid, droppedInvalidBars: dropped }
+}
+
 function normalizeOhlcvRows(rows) {
-  return [...rows]
-    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
-    .map((row) => ({
-      date: String(row.date).slice(0, 10),
-      open: Number(row.open),
-      high: Number(row.high),
-      low: Number(row.low),
-      close: Number(row.close ?? row.adjClose),
-      volume: Number(row.volume ?? 0),
-    }))
-    .filter(
-      (row) =>
-        Number.isFinite(row.open) &&
-        Number.isFinite(row.high) &&
-        Number.isFinite(row.low) &&
-        Number.isFinite(row.close)
-    )
+  return sanitizeOhlcvCandles(
+    [...rows]
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+      .map((row) => ({
+        date: String(row.date).slice(0, 10),
+        open: Number(row.open),
+        high: Number(row.high),
+        low: Number(row.low),
+        close: Number(row.close ?? row.adjClose),
+        volume: Number(row.volume ?? 0),
+      }))
+  ).candles
 }
 
 async function fetchOhlcvFromFmp(symbol, { lookbackDays = 260 } = {}) {
@@ -597,12 +619,7 @@ async function fetchOhlcvFromYahoo(symbol, { lookbackDays = 260 } = {}) {
             const l = Number(quote.low?.[i])
             const c = Number(quote.close?.[i])
             const v = Number(quote.volume?.[i])
-            if (
-              Number.isFinite(o) &&
-              Number.isFinite(h) &&
-              Number.isFinite(l) &&
-              Number.isFinite(c)
-            ) {
+            if (isValidOhlcvCandle({ open: o, high: h, low: l, close: c, volume: v })) {
               candles.push({
                 date: formatIsoDateFromUnix(timestamps[i]),
                 open: o,
@@ -2412,6 +2429,79 @@ app.get('/api/stocks', async (req, res) => {
   })
 })
 
+app.get('/api/screener/status', async (_req, res) => {
+  if (!isDatabaseEnabled()) {
+    res.json({ enabled: false })
+    return
+  }
+
+  try {
+    const status = await getSyncStatus(isSyncRunning())
+    res.json({
+      ...status,
+      progress: isSyncRunning() ? getSyncProgress() : null,
+    })
+  } catch (error) {
+    res.status(500).json({
+      error: error?.message ?? 'Could not read screener status.',
+    })
+  }
+})
+
+app.get('/api/screener', async (req, res) => {
+  if (!isDatabaseEnabled()) {
+    res.status(503).json({
+      error: 'DATABASE_URL is not configured. Set it to enable paginated screener.',
+    })
+    return
+  }
+
+  try {
+    const result = await queryScreener({
+      offset: req.query.offset,
+      limit: req.query.limit,
+      sort: req.query.sort,
+      dir: req.query.dir,
+      search: req.query.search,
+      trend: req.query.trend,
+      country: req.query.country,
+    })
+    res.json(result)
+  } catch (error) {
+    res.status(500).json({
+      error: error?.message ?? 'Could not query screener.',
+    })
+  }
+})
+
+app.post('/api/screener/sync', async (req, res) => {
+  if (!isDatabaseEnabled()) {
+    res.status(503).json({
+      error: 'DATABASE_URL is not configured.',
+    })
+    return
+  }
+
+  const force = req.query.force === '1' || req.query.force === 'true'
+
+  if (isSyncRunning()) {
+    res.json({ ok: true, syncing: true, progress: getSyncProgress() })
+    return
+  }
+
+  void syncMarketData(
+    {
+      fetchMarketUniverse,
+      fetchSymbolData,
+    },
+    { force }
+  ).catch((error) => {
+    console.warn('Market sync failed:', error?.message ?? error)
+  })
+
+  res.json({ ok: true, syncing: true })
+})
+
 app.get('/api/universe', async (req, res) => {
   try {
     const force = req.query.force === '1' || req.query.force === 'true'
@@ -2620,12 +2710,19 @@ app.get('/api/technical-analysis', async (req, res) => {
     const { candles, dataSource, fmpError } = await fetchOhlcv(symbol, {
       lookbackDays: 260,
     })
-    const snapshot = computeTechnicalSnapshot(symbol, candles)
+    const { candles: cleanCandles, droppedInvalidBars } = sanitizeOhlcvCandles(candles)
+    if (cleanCandles.length < 30) {
+      res.status(502).json({
+        error: `Not enough valid OHLCV data for ${symbol} after filtering bad bars.`,
+      })
+      return
+    }
+    const snapshot = computeTechnicalSnapshot(symbol, cleanCandles)
 
     let chartImageBase64 = null
     let chartImageError = null
     try {
-      chartImageBase64 = await generateCandleChartPng(symbol, candles, {
+      chartImageBase64 = await generateCandleChartPng(symbol, cleanCandles, {
         supports: snapshot.supports,
         resistances: snapshot.resistances,
       })
@@ -2662,7 +2759,7 @@ app.get('/api/technical-analysis', async (req, res) => {
     } else {
       analysisError = hasAnyAiKey()
         ? 'No AI provider active. Check AI_PROVIDER env value.'
-        : 'AI analysis disabled. Set GEMINI_API_KEY (free at https://aistudio.google.com/apikey) to enable the narrative.'
+        : 'AI analysis disabled. Set GEMINI_API_KEY, GROQ_API_KEY, or ANTHROPIC_API_KEY on the server (Render env vars).'
     }
 
     const responsePayload = {
@@ -2675,6 +2772,11 @@ app.get('/api/technical-analysis', async (req, res) => {
       recentCandles: snapshot.recentCandles,
       dataSource,
       fmpFallbackReason: dataSource !== 'fmp' && fmpError ? fmpError : null,
+      droppedInvalidBars: droppedInvalidBars > 0 ? droppedInvalidBars : null,
+      dataQualityNote:
+        droppedInvalidBars > 0
+          ? `Filtered ${droppedInvalidBars} OHLCV bar(s) with zero/invalid prices from the data source.`
+          : null,
       analysis,
       analysisError,
       ai: aiMeta,
@@ -2744,6 +2846,21 @@ server.on('error', (error) => {
 
 server.listen(PORT, async () => {
   console.log(`Stock API server running on http://localhost:${PORT}`)
+
+  if (isDatabaseEnabled()) {
+    try {
+      await initSchema()
+      console.log('PostgreSQL schema ready.')
+      scheduleMarketSync({
+        fetchMarketUniverse,
+        fetchSymbolData,
+      })
+    } catch (error) {
+      console.warn('PostgreSQL init failed:', error?.message ?? error)
+    }
+    return
+  }
+
   await loadMarketSnapshotFromDisk()
   scheduleMarketSnapshotWarmup()
 })
