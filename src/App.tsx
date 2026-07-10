@@ -12,10 +12,12 @@ import {
 import {
   BATCH_CONCURRENCY,
   CACHE_TTL_MS,
+  DB_EXPIRES_AT,
   MANUAL_STOCKS_DEBOUNCE_MS,
   MARKET_SNAPSHOT_STORAGE_KEY,
   MAX_SYMBOLS,
   PAGE_SIZE,
+  RENDER_POSTGRES_DOCS_URL,
   SCROLLER_PAGE_SIZE,
 } from './constants/app'
 import {
@@ -89,6 +91,39 @@ interface ScreenerApiRow {
   monthChange: number | null
   yearChange: number | null
   trend: TrendAnalysis
+}
+
+interface ScreenerSyncProgress {
+  symbolsLoaded: number
+  symbolsTotal: number
+  updated: number
+  unchanged: number
+  failed: number
+}
+
+interface ScreenerSyncStatus {
+  enabled: boolean
+  syncing: boolean
+  totalTickers: number
+  totalQuotes: number
+  lastSyncAt: string | null
+  lastSyncUpdated: number | null
+  lastSyncUnchanged: number | null
+  lastSyncFailed: number | null
+  progress: ScreenerSyncProgress | null
+}
+
+function formatDbExpiryLabel(isoDate: string): string | null {
+  const parsed = new Date(`${isoDate}T12:00:00`)
+  if (Number.isNaN(parsed.getTime())) {
+    return null
+  }
+
+  return parsed.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
 }
 
 function mapScreenerRow(row: ScreenerApiRow): EnrichedStock {
@@ -391,6 +426,7 @@ function App() {
   const [universeSearch, setUniverseSearch] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [dbScreenerEnabled, setDbScreenerEnabled] = useState<boolean | null>(null)
+  const [screenerSyncStatus, setScreenerSyncStatus] = useState<ScreenerSyncStatus | null>(null)
   const [screenerRows, setScreenerRows] = useState<EnrichedStock[]>([])
   const [screenerTotal, setScreenerTotal] = useState(0)
   const [screenerLoadingMore, setScreenerLoadingMore] = useState(false)
@@ -1070,11 +1106,66 @@ function App() {
   }, [loadUniverse])
 
   useEffect(() => {
-    void fetch(apiUrl('/api/screener/status'))
-      .then((response) => response.json())
-      .then((body) => setDbScreenerEnabled(Boolean(body.enabled)))
-      .catch(() => setDbScreenerEnabled(false))
-  }, [])
+    let cancelled = false
+
+    async function pollScreenerStatus() {
+      try {
+        const response = await fetch(apiUrl('/api/screener/status'))
+        const body = (await response.json()) as ScreenerSyncStatus
+        if (cancelled) {
+          return
+        }
+
+        setDbScreenerEnabled(Boolean(body.enabled))
+        if (!body.enabled) {
+          setScreenerSyncStatus(null)
+          return
+        }
+
+        setScreenerSyncStatus(body)
+
+        if (body.progress) {
+          setUniverseProgress({
+            completed: body.progress.symbolsLoaded,
+            total: body.progress.symbolsTotal,
+            symbolsLoaded: body.progress.symbolsLoaded,
+            symbolsTotal: body.progress.symbolsTotal,
+          })
+        }
+
+        if (
+          !body.syncing &&
+          Number(body.totalQuotes) > 0 &&
+          screenerRows.length === 0 &&
+          mode === 'universe' &&
+          body.enabled
+        ) {
+          void fetchScreenerPage({ reset: true })
+        }
+      } catch {
+        if (!cancelled) {
+          setDbScreenerEnabled(false)
+          setScreenerSyncStatus(null)
+        }
+      }
+    }
+
+    void pollScreenerStatus()
+
+    const intervalId =
+      dbScreenerEnabled === true
+        ? window.setInterval(() => {
+            void pollScreenerStatus()
+          }, 2500)
+        : undefined
+
+    return () => {
+      cancelled = true
+      if (intervalId != null) {
+        window.clearInterval(intervalId)
+      }
+    }
+  }, [dbScreenerEnabled, fetchScreenerPage, mode, screenerRows.length])
 
   useEffect(() => {
     if (mode !== 'universe' || dbScreenerEnabled === null) {
@@ -1120,35 +1211,6 @@ function App() {
       })
       .catch(() => setRecommendationPool([]))
   }, [screenerTotal, useDbScreener])
-
-  useEffect(() => {
-    if (!useDbScreener || !fullMarketStocksLoading) {
-      return
-    }
-
-    const intervalId = window.setInterval(() => {
-      void fetch(apiUrl('/api/screener/status'))
-        .then((response) => response.json())
-        .then((body) => {
-          if (body.progress) {
-            setUniverseProgress({
-              completed: body.progress.symbolsLoaded,
-              total: body.progress.symbolsTotal,
-              symbolsLoaded: body.progress.symbolsLoaded,
-              symbolsTotal: body.progress.symbolsTotal,
-            })
-          }
-          if (!body.syncing && Number(body.totalQuotes) > 0 && screenerRows.length === 0) {
-            void fetchScreenerPage({ reset: true })
-          }
-        })
-        .catch(() => {
-          // Ignore polling errors.
-        })
-    }, 2500)
-
-    return () => window.clearInterval(intervalId)
-  }, [fetchScreenerPage, fullMarketStocksLoading, screenerRows.length, useDbScreener])
 
   useEffect(() => {
     if (!useDbScreener) {
@@ -1239,6 +1301,18 @@ function App() {
         ? Math.round((universeProgress.completed / universeProgress.total) * 100)
         : 0
 
+  const dbExpiryLabel = DB_EXPIRES_AT ? formatDbExpiryLabel(DB_EXPIRES_AT) : null
+  const showDbExpiryAlert =
+    useDbScreener &&
+    dbExpiryLabel != null &&
+    new Date(`${DB_EXPIRES_AT}T23:59:59`).getTime() > Date.now()
+
+  const syncProgress = screenerSyncStatus?.progress
+  const syncProgressPercent =
+    syncProgress && syncProgress.symbolsTotal > 0
+      ? Math.round((syncProgress.symbolsLoaded / syncProgress.symbolsTotal) * 100)
+      : 0
+
   function handleBackToScreener() {
     setFundamentalsSymbol(null)
     setTechnicalSymbol(null)
@@ -1326,6 +1400,53 @@ function App() {
       </header>
 
       <main className="page">
+        {(showDbExpiryAlert || (useDbScreener && screenerSyncStatus?.syncing)) ? (
+          <div className="app-alerts">
+            {showDbExpiryAlert ? (
+              <div className="app-alert info" role="status">
+                <span className="app-alert-icon" aria-hidden="true">
+                  i
+                </span>
+                <p>
+                  Your database will expire on <strong>{dbExpiryLabel}</strong>. The database will
+                  be deleted unless you{' '}
+                  <a href={RENDER_POSTGRES_DOCS_URL} target="_blank" rel="noreferrer noopener">
+                    upgrade to a paid instance type
+                  </a>
+                  .
+                </p>
+              </div>
+            ) : null}
+            {useDbScreener && screenerSyncStatus?.syncing ? (
+              <div className="app-alert sync" role="status" aria-live="polite">
+                <span className="app-alert-icon" aria-hidden="true">
+                  ↻
+                </span>
+                <div>
+                  <p>
+                    Syncing market data to PostgreSQL…{' '}
+                    {(syncProgress?.symbolsLoaded ?? screenerSyncStatus.totalQuotes).toLocaleString()}{' '}
+                    / {(syncProgress?.symbolsTotal ?? screenerSyncStatus.totalTickers).toLocaleString()}{' '}
+                    symbols
+                    {syncProgressPercent > 0 ? ` (${syncProgressPercent}%)` : ''}
+                    {screenerSyncStatus.totalQuotes > 0
+                      ? `. Showing ${screenerSyncStatus.totalQuotes.toLocaleString()} cached rows meanwhile.`
+                      : '.'}
+                  </p>
+                  {syncProgress && syncProgress.symbolsTotal > 0 ? (
+                    <div className="progress-bar-wrapper">
+                      <div
+                        className="progress-bar-fill"
+                        style={{ width: `${syncProgressPercent}%` }}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         {/* Controls panel */}
         <section className="panel">
           <div className="panel-header">

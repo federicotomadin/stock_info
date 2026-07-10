@@ -36,6 +36,7 @@ jobs:
           VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH || format('/{0}/', github.event.repository.name) }}
           # Secret o variable; la URL debe ser https (Pages bloquea API http por mixed content).
           VITE_API_ORIGIN: ${{ secrets.VITE_API_ORIGIN || vars.VITE_API_ORIGIN }}
+          VITE_DB_EXPIRES_AT: ${{ secrets.VITE_DB_EXPIRES_AT || vars.VITE_DB_EXPIRES_AT }}
         run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
