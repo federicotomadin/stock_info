@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+} from 'react'
 import './App.css'
 import {
   COUNTRY_LABELS,
@@ -28,7 +37,7 @@ import {
   parseSymbols,
   trendTooltip,
 } from './utils'
-import { horizonByTrendLabel, recommendationScore } from './analyzer'
+import { horizonByTrendLabel, passesRiskProfileFilter, recommendationScore } from './analyzer'
 import { stockInsight } from './riskProfile'
 import { apiEndpoint, apiUrl, hasApiOriginConfigured } from './servicesAPI'
 import { FundamentalsView } from './FundamentalsView'
@@ -209,6 +218,7 @@ function detectCountry(stock: Partial<EnrichedStock>): CountryLabel {
 
   if (
     name.includes('MERCADOLIBRE') ||
+    name.includes('SATELLOGIC') ||
     name.includes('ARGENTINA') ||
     name.includes('ARGENTINE')
   ) {
@@ -344,7 +354,51 @@ function TickerActionsMenu({
   className = 'ticker-link',
 }: TickerActionsMenuProps) {
   const [open, setOpen] = useState(false)
+  const [menuStyle, setMenuStyle] = useState<CSSProperties>({})
   const containerRef = useRef<HTMLSpanElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  const placeMenu = useCallback(() => {
+    const anchor = containerRef.current
+    const menu = menuRef.current
+    if (!anchor || !menu) {
+      return
+    }
+
+    const anchorRect = anchor.getBoundingClientRect()
+    const menuHeight = menu.offsetHeight
+    const menuWidth = menu.offsetWidth
+    const spaceBelow = window.innerHeight - anchorRect.bottom - 8
+    const openUp = spaceBelow < menuHeight && anchorRect.top > menuHeight + 8
+
+    let left = anchorRect.left
+    if (left + menuWidth > window.innerWidth - 16) {
+      left = window.innerWidth - menuWidth - 16
+    }
+    left = Math.max(16, left)
+
+    setMenuStyle({
+      position: 'fixed',
+      left,
+      top: openUp ? anchorRect.top - menuHeight - 6 : anchorRect.bottom + 6,
+      minWidth: Math.max(anchorRect.width, 220),
+      zIndex: 1000,
+    })
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!open) {
+      return undefined
+    }
+
+    placeMenu()
+    window.addEventListener('resize', placeMenu)
+    window.addEventListener('scroll', placeMenu, true)
+    return () => {
+      window.removeEventListener('resize', placeMenu)
+      window.removeEventListener('scroll', placeMenu, true)
+    }
+  }, [open, placeMenu])
 
   useEffect(() => {
     if (!open) {
@@ -352,12 +406,14 @@ function TickerActionsMenu({
     }
 
     function handleOutsideClick(event: MouseEvent) {
+      const target = event.target as Node
       if (
-        containerRef.current &&
-        !containerRef.current.contains(event.target as Node)
+        containerRef.current?.contains(target) ||
+        menuRef.current?.contains(target)
       ) {
-        setOpen(false)
+        return
       }
+      setOpen(false)
     }
 
     function handleEscape(event: KeyboardEvent) {
@@ -387,7 +443,12 @@ function TickerActionsMenu({
         {symbol}
       </button>
       {open ? (
-        <div className="ticker-menu" role="menu">
+        <div
+          ref={menuRef}
+          className="ticker-menu ticker-menu-floating"
+          role="menu"
+          style={menuStyle}
+        >
           <button
             type="button"
             role="menuitem"
@@ -586,7 +647,7 @@ function App() {
         : sortedStocks
 
     return source
-      .filter((stock) => stock.trend?.label !== 'Downtrend')
+      .filter((stock) => passesRiskProfileFilter(stock, riskProfile))
       .map((stock) => {
         const score = recommendationScore(stock, riskProfile, investmentGoals)
         return {
@@ -719,7 +780,6 @@ function App() {
       screenerRequestIdRef.current = requestId
 
       const offset = reset ? 0 : screenerOffsetRef.current
-      const loadingMore = !reset && offset > 0
 
       if (reset) {
         setFullMarketStocksLoading(true)
@@ -1204,8 +1264,8 @@ function App() {
     }
 
     const endpoint = apiEndpoint('/api/screener')
-    endpoint.searchParams.set('limit', '300')
-    endpoint.searchParams.set('sort', 'year')
+    endpoint.searchParams.set('limit', '200')
+    endpoint.searchParams.set('sort', 'trend')
     endpoint.searchParams.set('dir', 'desc')
 
     void fetch(endpoint)
@@ -1310,12 +1370,6 @@ function App() {
     useDbScreener &&
     dbExpiryLabel != null &&
     new Date(`${DB_EXPIRES_AT}T23:59:59`).getTime() > Date.now()
-
-  const syncProgress = screenerSyncStatus?.progress
-  const syncProgressPercent =
-    syncProgress && syncProgress.symbolsTotal > 0
-      ? Math.round((syncProgress.symbolsLoaded / syncProgress.symbolsTotal) * 100)
-      : 0
 
   function handleBackToScreener() {
     setFundamentalsSymbol(null)
@@ -1434,13 +1488,6 @@ function App() {
                   </a>
                   .
                 </p>
-              </div>
-            ) : null}
-            {useDbScreener && screenerSyncStatus?.syncing ? (
-              <div className="app-alert sync" role="status" aria-live="polite">
-                <span className="app-alert-icon" aria-hidden="true">
-                  ↻
-                </span>
               </div>
             ) : null}
           </div>
@@ -1924,6 +1971,7 @@ function App() {
             </div>
           ) : (
             <div className="table-panel">
+              <div className="table-panel-scroll">
               <table>
                 <thead>
                   <tr>
@@ -2016,6 +2064,7 @@ function App() {
                   ))}
                 </tbody>
               </table>
+              </div>
 
               {!screenerTableLoading && !pagedStocks.length && !error ? (
                 <div className="empty-state">

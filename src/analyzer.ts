@@ -17,6 +17,24 @@ export const horizonByTrendLabel = (label: TrendLabel, profile: RiskProfile): st
   return 'Watchlist (avoid entry for now)'
 }
 
+const cappedPositive = (value: number, cap: number): number => Math.min(Math.max(value, 0), cap)
+
+export const passesRiskProfileFilter = (
+  stock: EnrichedStock,
+  profile: RiskProfile,
+): boolean => {
+  if (stock.trend?.label === 'Downtrend') {
+    return false
+  }
+
+  const year = Math.abs(numberOrFallback(stock.yearChange, 0))
+  if (profile === 'Conservative' && year > 70) {
+    return false
+  }
+
+  return true
+}
+
 export const recommendationScore = (
   stock: EnrichedStock,
   profile: RiskProfile,
@@ -28,35 +46,49 @@ export const recommendationScore = (
   const trendScore = stock.trend?.score ?? 0
   const trendLabel = stock.trend?.label ?? 'Neutral'
 
+  const shortTermVolatility = Math.abs(day) + Math.abs(month) * 0.4
+  const extremeYearMove = Math.abs(year) > 60 ? (Math.abs(year) - 60) * 0.45 : 0
+
   let score = trendScore
 
   if (profile === 'Conservative') {
-    score += month * 0.6 + year * 0.8 - Math.abs(day) * 0.5
-    if (trendLabel === 'Downtrend') score -= 12
-    if (trendLabel === 'Momentum') score += 4
+    score += cappedPositive(month, 25) * 0.85 + cappedPositive(year, 35) * 0.55
+    score -= shortTermVolatility * 0.65
+    score -= extremeYearMove
+    if (trendLabel === 'Momentum') score += 10
+    if (trendLabel === 'Pullback bounce') score += 4
+    if (trendLabel === 'Early breakout' || trendLabel === 'Reversal') score -= 8
   } else if (profile === 'Aggressive') {
-    score += day * 1.2 + month * 0.45 + year * 0.2
-    if (trendLabel === 'Early breakout' || trendLabel === 'Reversal') score += 6
-    if (trendLabel === 'Downtrend') score -= 6
+    score += day * 1.45 + month * 0.55 + year * 0.12
+    score += shortTermVolatility * 0.2
+    if (trendLabel === 'Early breakout' || trendLabel === 'Reversal') score += 12
+    if (trendLabel === 'Momentum') score += 5
   } else {
-    score += day * 0.55 + month * 0.65 + year * 0.45
-    if (trendLabel === 'Momentum' || trendLabel === 'Reversal') score += 3
+    score += day * 0.45 + month * 0.75 + cappedPositive(year, 50) * 0.4
+    score -= extremeYearMove * 0.35
+    if (trendLabel === 'Momentum' || trendLabel === 'Reversal') score += 4
   }
 
   if (goals.includes('dividends')) {
-    score += year > 0 ? 3 : -2
+    score += year > 0 && year < 40 ? 4 : year > 0 ? 1 : -2
     score -= Math.abs(day) * 0.25
   }
   if (goals.includes('stability')) {
-    score -= Math.abs(day) * 0.4
-    score += month > 0 ? 2 : -1
+    score -= shortTermVolatility * 0.45
+    score += month > 0 && month < 20 ? 3 : month > 0 ? 1 : -1
   }
   if (goals.includes('growth')) {
-    score += month * 0.35 + year * 0.35
+    if (profile === 'Conservative') {
+      score += cappedPositive(month, 20) * 0.45 + cappedPositive(year, 35) * 0.2
+    } else if (profile === 'Aggressive') {
+      score += month * 0.55 + day * 0.35
+    } else {
+      score += month * 0.4 + cappedPositive(year, 55) * 0.25
+    }
   }
   if (goals.includes('value')) {
     if (trendLabel === 'Reversal' || trendLabel === 'Pullback bounce') {
-      score += 4
+      score += profile === 'Aggressive' ? 5 : 4
     }
   }
 

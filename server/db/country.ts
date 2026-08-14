@@ -12,10 +12,24 @@ export type CountryLabel =
   | 'Taiwan'
 
 const COUNTRY_SYMBOL_OVERRIDES: Record<string, CountryLabel> = {
+  // Argentine ADRs on US exchanges
   MELI: 'Argentina',
   GLOB: 'Argentina',
   CRESY: 'Argentina',
   YPF: 'Argentina',
+  SATL: 'Argentina',
+  BMA: 'Argentina',
+  GGAL: 'Argentina',
+  SUPV: 'Argentina',
+  VIST: 'Argentina',
+  PAM: 'Argentina',
+  TGS: 'Argentina',
+  IRS: 'Argentina',
+  EDN: 'Argentina',
+  CEPU: 'Argentina',
+  AGRO: 'Argentina',
+  DESP: 'Argentina',
+  CAAP: 'Argentina',
   TS: 'Europa',
   SHEL: 'Europa',
   NVO: 'Europa',
@@ -47,6 +61,7 @@ export function detectCountry(stock: TickerLike): CountryLabel {
 
   if (
     name.includes('MERCADOLIBRE') ||
+    name.includes('SATELLOGIC') ||
     name.includes('ARGENTINA') ||
     name.includes('ARGENTINE')
   ) {

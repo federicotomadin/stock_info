@@ -472,8 +472,11 @@
 /* ------------------------------------------------------------------ */
 
 .table-panel {
-  overflow-x: auto;
   margin: 0 -0.25rem;
+}
+
+.table-panel-scroll {
+  overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -487,8 +490,8 @@ table {
 
 /* Keep columns from crushing into each other on small screens.
    Once the viewport is narrower than this, the table scrolls
-   horizontally inside .table-panel instead of overlapping. */
-.table-panel table {
+   horizontally inside .table-panel-scroll instead of overlapping. */
+.table-panel-scroll table {
   min-width: 760px;
 }
 
@@ -1095,6 +1098,12 @@ tbody tr:hover {
   display: flex;
   flex-direction: column;
   gap: 0.125rem;
+}
+
+.ticker-menu-floating {
+  position: fixed;
+  top: auto;
+  left: auto;
 }
 
 .ticker-menu-item {

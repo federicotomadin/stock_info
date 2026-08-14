@@ -40,10 +40,24 @@ export const INVESTMENT_GOALS = [
 ]
 
 export const COUNTRY_SYMBOL_OVERRIDES: Record<string, CountryLabel> = {
+  // Argentine ADRs on US exchanges
   MELI: 'Argentina',
   GLOB: 'Argentina',
   CRESY: 'Argentina',
   YPF: 'Argentina',
+  SATL: 'Argentina',
+  BMA: 'Argentina',
+  GGAL: 'Argentina',
+  SUPV: 'Argentina',
+  VIST: 'Argentina',
+  PAM: 'Argentina',
+  TGS: 'Argentina',
+  IRS: 'Argentina',
+  EDN: 'Argentina',
+  CEPU: 'Argentina',
+  AGRO: 'Argentina',
+  DESP: 'Argentina',
+  CAAP: 'Argentina',
   TS: 'Europa',
   SHEL: 'Europa',
   NVO: 'Europa',
