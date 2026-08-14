@@ -5,7 +5,7 @@ alwaysApply: true
 
 # React Front-end Performance
 
-**Golden rule:** `memo` / `useMemo` / `useCallback` are the **last resort**, not the first. Fix state architecture first (where it lives, who subscribes); memoization only patches symptoms.
+**Golden rule:** `memo` / `useMemo` / `useCallback` are the **last resortd**, not the first. Fix state architecture first (where it lives, who subscribes); memoization only patches symptoms.
 
 **Measure first:** Before touching code, you need data. Optimizing without measuring is the classic trap.
 

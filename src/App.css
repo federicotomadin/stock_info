@@ -409,6 +409,27 @@
   font-weight: 600;
 }
 
+.app-alert.warn {
+  color: var(--color-warning);
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+}
+
+.app-alert.warn .app-alert-icon {
+  background: rgba(217, 119, 6, 0.12);
+}
+
+.app-alert.warn code {
+  font-size: 0.8125rem;
+}
+
+.app-alert-detail {
+  display: block;
+  margin-top: 0.35rem;
+  opacity: 0.85;
+  word-break: break-word;
+}
+
 .app-alert.sync {
   color: var(--color-dark-green);
   background: var(--color-light-mint);

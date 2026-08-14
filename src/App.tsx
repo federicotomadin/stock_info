@@ -111,6 +111,7 @@ interface ScreenerSyncStatus {
   lastSyncUnchanged: number | null
   lastSyncFailed: number | null
   progress: ScreenerSyncProgress | null
+  error?: string
 }
 
 function formatDbExpiryLabel(isoDate: string): string | null {
@@ -426,6 +427,7 @@ function App() {
   const [universeSearch, setUniverseSearch] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [dbScreenerEnabled, setDbScreenerEnabled] = useState<boolean | null>(null)
+  const [dbConnectionError, setDbConnectionError] = useState('')
   const [screenerSyncStatus, setScreenerSyncStatus] = useState<ScreenerSyncStatus | null>(null)
   const [screenerRows, setScreenerRows] = useState<EnrichedStock[]>([])
   const [screenerTotal, setScreenerTotal] = useState(0)
@@ -1119,9 +1121,11 @@ function App() {
         setDbScreenerEnabled(Boolean(body.enabled))
         if (!body.enabled) {
           setScreenerSyncStatus(null)
+          setDbConnectionError(body.error?.trim() ?? '')
           return
         }
 
+        setDbConnectionError('')
         setScreenerSyncStatus(body)
 
         if (body.progress) {
@@ -1146,18 +1150,17 @@ function App() {
         if (!cancelled) {
           setDbScreenerEnabled(false)
           setScreenerSyncStatus(null)
+          setDbConnectionError('Could not reach the API to check PostgreSQL status.')
         }
       }
     }
 
     void pollScreenerStatus()
 
-    const intervalId =
-      dbScreenerEnabled === true
-        ? window.setInterval(() => {
-            void pollScreenerStatus()
-          }, 2500)
-        : undefined
+    const intervalMs = dbScreenerEnabled === true ? 2500 : 8000
+    const intervalId = window.setInterval(() => {
+      void pollScreenerStatus()
+    }, intervalMs)
 
     return () => {
       cancelled = true
@@ -1175,7 +1178,7 @@ function App() {
     const timeoutId = window.setTimeout(() => {
       if (dbScreenerEnabled) {
         void fetchScreenerPage({ reset: true })
-      } else {
+      } else if (!dbConnectionError) {
         void loadUniverseStocks()
       }
     }, 350)
@@ -1183,6 +1186,7 @@ function App() {
     return () => window.clearTimeout(timeoutId)
   }, [
     countryFilter,
+    dbConnectionError,
     dbScreenerEnabled,
     fetchScreenerPage,
     loadUniverseStocks,
@@ -1400,8 +1404,23 @@ function App() {
       </header>
 
       <main className="page">
-        {(showDbExpiryAlert || (useDbScreener && screenerSyncStatus?.syncing)) ? (
+        {(showDbExpiryAlert ||
+          Boolean(dbConnectionError) ||
+          (useDbScreener && screenerSyncStatus?.syncing)) ? (
           <div className="app-alerts">
+            {dbConnectionError ? (
+              <div className="app-alert warn" role="alert">
+                <span className="app-alert-icon" aria-hidden="true">
+                  !
+                </span>
+                <p>
+                  PostgreSQL is not reachable, so the screener cannot read cached quotes. Start
+                  it locally with <code>npm run db:up</code>, or in production recreate the Render
+                  Postgres instance and set <code>DATABASE_URL</code> on the API.
+                  <span className="app-alert-detail">{dbConnectionError}</span>
+                </p>
+              </div>
+            ) : null}
             {showDbExpiryAlert ? (
               <div className="app-alert info" role="status">
                 <span className="app-alert-icon" aria-hidden="true">
@@ -1422,26 +1441,6 @@ function App() {
                 <span className="app-alert-icon" aria-hidden="true">
                   ↻
                 </span>
-                <div>
-                  <p>
-                    Syncing market data to PostgreSQL…{' '}
-                    {(syncProgress?.symbolsLoaded ?? screenerSyncStatus.totalQuotes).toLocaleString()}{' '}
-                    / {(syncProgress?.symbolsTotal ?? screenerSyncStatus.totalTickers).toLocaleString()}{' '}
-                    symbols
-                    {syncProgressPercent > 0 ? ` (${syncProgressPercent}%)` : ''}
-                    {screenerSyncStatus.totalQuotes > 0
-                      ? `. Showing ${screenerSyncStatus.totalQuotes.toLocaleString()} cached rows meanwhile.`
-                      : '.'}
-                  </p>
-                  {syncProgress && syncProgress.symbolsTotal > 0 ? (
-                    <div className="progress-bar-wrapper">
-                      <div
-                        className="progress-bar-fill"
-                        style={{ width: `${syncProgressPercent}%` }}
-                      />
-                    </div>
-                  ) : null}
-                </div>
               </div>
             ) : null}
           </div>

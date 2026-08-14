@@ -2442,8 +2442,9 @@ app.get('/api/screener/status', async (_req, res) => {
       progress: isSyncRunning() ? getSyncProgress() : null,
     })
   } catch (error) {
-    res.status(500).json({
-      error: error?.message ?? 'Could not read screener status.',
+    res.json({
+      enabled: false,
+      error: error?.message ?? 'Could not connect to PostgreSQL.',
     })
   }
 })
@@ -2848,15 +2849,29 @@ server.listen(PORT, async () => {
   console.log(`Stock API server running on http://localhost:${PORT}`)
 
   if (isDatabaseEnabled()) {
-    try {
-      await initSchema()
-      console.log('PostgreSQL schema ready.')
-      scheduleMarketSync({
-        fetchMarketUniverse,
-        fetchSymbolData,
-      })
-    } catch (error) {
-      console.warn('PostgreSQL init failed:', error?.message ?? error)
+    const retryDelaysMs = [0, 2_000, 5_000, 10_000]
+    for (const [attempt, delayMs] of retryDelaysMs.entries()) {
+      if (delayMs) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs))
+      }
+      try {
+        await initSchema()
+        console.log('PostgreSQL schema ready.')
+        scheduleMarketSync({
+          fetchMarketUniverse,
+          fetchSymbolData,
+        })
+        return
+      } catch (error) {
+        const lastAttempt = attempt === retryDelaysMs.length - 1
+        console.warn(
+          `PostgreSQL init failed (attempt ${attempt + 1}/${retryDelaysMs.length}):`,
+          error?.message ?? error
+        )
+        if (lastAttempt) {
+          console.warn('Screener will stay off until PostgreSQL is reachable and the API restarts.')
+        }
+      }
     }
     return
   }
