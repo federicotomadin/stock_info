@@ -104,8 +104,8 @@
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text-secondary);
-  border-radius: var(--radius-full);
-  padding: 0.4375rem 0.9375rem;
+  border-radius: var(--radius-sm);
+  padding: 0.375rem 0.75rem;
   font-size: 0.8125rem;
   font-weight: 600;
   cursor: pointer;
@@ -124,7 +124,7 @@
 .chip.active {
   background: var(--color-wise-green);
   border-color: var(--color-wise-green);
-  color: var(--color-on-accent);
+  color: #ffffff;
 }
 
 /* ------------------------------------------------------------------ */
@@ -184,25 +184,21 @@
   justify-content: center;
   gap: 0.375rem;
   border: 1px solid transparent;
-  border-radius: var(--radius-full);
-  padding: 0.5625rem 1.25rem;
-  font-size: 0.9375rem;
-  font-weight: 700;
+  border-radius: var(--radius-md);
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
   font-family: inherit;
   cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
   white-space: nowrap;
   line-height: 1.4;
   font-feature-settings: "calt" 1;
 }
 
-.btn:active {
-  transform: scale(0.97);
-}
-
 .btn-primary {
   background: var(--color-wise-green);
-  color: var(--color-on-accent);
+  color: #ffffff;
   border-color: var(--color-wise-green);
 }
 
