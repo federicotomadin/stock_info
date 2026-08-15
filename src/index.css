@@ -1,89 +1,90 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
 :root {
   /* ------------------------------------------------------------------ */
-  /* Institutional palette — navy accent, slate neutrals               */
-  /* NOTE: legacy token names are kept so existing rules keep working,  */
-  /* but their VALUES now map to the professional navy/slate system.    */
+  /* eToro-inspired palette — near-black surfaces, bright green accent   */
+  /* NOTE: legacy token names are kept so existing rules keep working,   */
+  /* but their VALUES now map to the dark / neon-green system.           */
   /* ------------------------------------------------------------------ */
 
-  /* Primary Brand / Accent (navy) */
-  --color-near-black: #14181f;
-  --color-wise-green: #1e40af;   /* accent fill (navy) */
-  --color-dark-green: #1e3a8a;   /* strong text / links (navy) */
-  --color-light-mint: #eaeff9;   /* soft navy tint surfaces */
-  --color-pastel-green: #1a3798; /* accent hover (darker navy) */
+  /* Primary Brand / Accent (bright green) */
+  --color-near-black: #05080a;
+  --color-wise-green: #5aed7f;   /* accent fill (neon green) */
+  --color-dark-green: #6ef29a;   /* accent text on dark surfaces */
+  --color-light-mint: rgba(90, 237, 127, 0.14); /* green-tinted dark surface */
+  --color-pastel-green: #4bd66d; /* accent hover (slightly deeper) */
+  --color-on-accent: #04160b;    /* dark text sitting on a green fill */
 
   /* Backgrounds */
-  --color-bg: #eef1f6;
-  --color-surface: #ffffff;
-  --color-surface-raised: #f5f7fa;
-  --color-surface-green: rgba(30, 64, 175, 0.06);
+  --color-bg: #080b0a;
+  --color-surface: #12181a;
+  --color-surface-raised: #1b2325;
+  --color-surface-green: rgba(90, 237, 127, 0.08);
 
   /* Borders */
-  --color-border: rgba(20, 24, 31, 0.12);
-  --color-border-subtle: rgba(20, 24, 31, 0.08);
-  --color-border-green: #1e40af;
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-border-subtle: rgba(255, 255, 255, 0.06);
+  --color-border-green: #5aed7f;
 
   /* Text */
-  --color-text-primary: #14181f;
-  --color-text-secondary: #45505f;
-  --color-text-muted: #737d8a;
-  --color-text-placeholder: #9aa3af;
+  --color-text-primary: #f3f6f4;
+  --color-text-secondary: #aab4b0;
+  --color-text-muted: #7d8783;
+  --color-text-placeholder: #5f6a66;
 
-  /* Semantic — classic green / red for gains and losses */
-  --color-positive: #067647;
-  --color-positive-bg: #e7f6ee;
-  --color-positive-border: #a6e4c0;
+  /* Semantic — classic green / red for gains and losses (tuned for dark) */
+  --color-positive: #4ade80;
+  --color-positive-bg: rgba(74, 222, 128, 0.14);
+  --color-positive-border: rgba(74, 222, 128, 0.35);
 
-  --color-negative: #c62828;
-  --color-negative-bg: #fdecec;
-  --color-negative-border: #f3b5b5;
+  --color-negative: #f87171;
+  --color-negative-bg: rgba(248, 113, 113, 0.14);
+  --color-negative-border: rgba(248, 113, 113, 0.35);
 
-  --color-warning: #b45309;
-  --color-warning-bg: #fff8ec;
-  --color-warning-border: #f5d08a;
+  --color-warning: #fbbf24;
+  --color-warning-bg: rgba(251, 191, 36, 0.14);
+  --color-warning-border: rgba(251, 191, 36, 0.35);
 
-  --color-info: #1e40af;
-  --color-info-bg: #eaeff9;
-  --color-info-border: #bcccf0;
+  --color-info: #5aed7f;
+  --color-info-bg: rgba(90, 237, 127, 0.12);
+  --color-info-border: rgba(90, 237, 127, 0.35);
 
-  --color-caution: #b45309;
-  --color-caution-bg: #fff8ec;
-  --color-caution-border: #f5d08a;
+  --color-caution: #fbbf24;
+  --color-caution-bg: rgba(251, 191, 36, 0.14);
+  --color-caution-border: rgba(251, 191, 36, 0.35);
 
-  --color-speculative: #c2410c;
-  --color-speculative-bg: #fff2ec;
-  --color-speculative-border: #f6c19c;
+  --color-speculative: #fb923c;
+  --color-speculative-bg: rgba(251, 146, 60, 0.14);
+  --color-speculative-border: rgba(251, 146, 60, 0.35);
 
   /* Header */
-  --color-header-bg: #12233f;
+  --color-header-bg: #000000;
   --color-header-text: #ffffff;
-  --color-header-muted: #9fb0c9;
+  --color-header-muted: #9aa5a1;
 
   /* Brand Accent */
-  --color-brand: #1e40af;
-  --color-brand-hover: #1a3798;
-  --color-brand-text: #1e3a8a;
-  --color-brand-subtle: rgba(30, 64, 175, 0.12);
+  --color-brand: #5aed7f;
+  --color-brand-hover: #4bd66d;
+  --color-brand-text: #6ef29a;
+  --color-brand-subtle: rgba(90, 237, 127, 0.14);
 
   /* ------------------------------------------------------------------ */
-  /* Border Radius — restrained, institutional                          */
+  /* Border Radius — rounded, friendly (eToro uses generous curves)     */
   /* ------------------------------------------------------------------ */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 10px;
-  --radius-xl: 12px;
-  --radius-2xl: 16px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-2xl: 22px;
   --radius-full: 9999px;
 
   /* ------------------------------------------------------------------ */
-  /* Shadows — soft, subtle depth                                       */
+  /* Shadows — dark depth, subtle green glow for emphasis               */
   /* ------------------------------------------------------------------ */
-  --shadow-ring: rgba(20, 24, 31, 0.08) 0px 0px 0px 1px;
+  --shadow-ring: rgba(255, 255, 255, 0.06) 0px 0px 0px 1px;
   --shadow-ring-inset: var(--color-wise-green) 0px 0px 0px 1px inset;
-  --shadow-card: rgba(20, 24, 31, 0.04) 0px 1px 2px, rgba(20, 24, 31, 0.06) 0px 1px 3px;
-  --shadow-pop: rgba(20, 24, 31, 0.1) 0px 12px 32px, rgba(20, 24, 31, 0.06) 0px 2px 8px;
+  --shadow-card: rgba(0, 0, 0, 0.4) 0px 1px 2px, rgba(0, 0, 0, 0.5) 0px 2px 8px;
+  --shadow-pop: rgba(0, 0, 0, 0.6) 0px 12px 32px, rgba(90, 237, 127, 0.12) 0px 2px 12px;
 
   /* ------------------------------------------------------------------ */
   /* Transitions                                                        */
@@ -115,9 +116,9 @@ body {
 
 h1, h2, h3, h4, h5, h6 {
   font-feature-settings: "calt" 1;
-  line-height: 1.2;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  line-height: 1.15;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   color: var(--color-text-primary);
 }
 
@@ -131,7 +132,7 @@ h2 {
 
 h3 {
   font-size: 1.125rem;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.3;
 }
 
@@ -150,8 +151,8 @@ a:hover {
 }
 
 ::selection {
-  background: var(--color-light-mint);
-  color: var(--color-dark-green);
+  background: var(--color-wise-green);
+  color: var(--color-on-accent);
 }
 
 :focus-visible {
