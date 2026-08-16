@@ -1060,19 +1060,6 @@ tbody tr:hover {
   width: 100%;
 }
 
-.fundamentals-limit-banner {
-  text-align: center;
-  padding: 1.5rem;
-  font-size: 0.9375rem;
-  line-height: 1.6;
-}
-
-.fundamentals-limit-banner a {
-  color: var(--color-warning);
-  font-weight: 600;
-  text-decoration: underline;
-}
-
 /* ------------------------------------------------------------------ */
 /*  Ticker actions dropdown                                            */
 /* ------------------------------------------------------------------ */

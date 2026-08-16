@@ -1,3 +1,5 @@
+import { TREND_ANALYSIS } from '../../shared/trendAnalysisConstants.js'
+
 export type TrendLabel =
   | 'Early breakout'
   | 'Reversal'
@@ -39,38 +41,69 @@ export function analyzeTrend(stock: QuoteLike): TrendAnalysis {
     }
   }
 
-  const day = numberOrFallback(stock.dayChange, -100)
-  const month = numberOrFallback(stock.monthChange, -100)
-  const year = numberOrFallback(stock.yearChange, -100)
-  const acceleration = day - month / 21
+  const { missingChangeFallback, yearScoreCap, scoreWeights, patterns } = TREND_ANALYSIS
 
-  let score = day * 0.55 + month * 0.35 + year * 0.1
+  const day = numberOrFallback(stock.dayChange, missingChangeFallback)
+  const month = numberOrFallback(stock.monthChange, missingChangeFallback)
+  const year = numberOrFallback(stock.yearChange, missingChangeFallback)
+
+  // Cap year in score so +1000% 1Y lottery tickets don't outrank real Momentum setups.
+  const yearForScore = Math.max(Math.min(year, yearScoreCap), -yearScoreCap)
+  let score = day * scoreWeights.day + month * scoreWeights.month + yearForScore * scoreWeights.year
   let label: TrendLabel = 'Neutral'
   let tone: TrendTone = 'neutral'
   let detail = 'No clear trend signal yet.'
 
-  if (day > 1.1 && month < 4 && year < 18) {
-    score += 10
+  const {
+    earlyBreakout,
+    reversal,
+    momentum,
+    downtrend,
+    pullbackBounce,
+  } = patterns
+
+  if (
+    day > earlyBreakout.thresholds.dayMin &&
+    month < earlyBreakout.thresholds.monthMax &&
+    year < earlyBreakout.thresholds.yearMax
+  ) {
+    score += earlyBreakout.scoreAdjustment
     label = 'Early breakout'
     tone = 'speculative'
     detail = 'Strong daily move but unconfirmed by longer timeframes — high risk, could reverse.'
-  } else if (day > 0.4 && month > 0 && year < 0) {
-    score += 14
+  } else if (
+    day > reversal.thresholds.dayMin &&
+    month > reversal.thresholds.monthMin &&
+    year < reversal.thresholds.yearMax
+  ) {
+    score += reversal.scoreAdjustment
     label = 'Reversal'
     tone = 'caution'
     detail = 'Short-term momentum turning positive after weak year — watch for confirmation.'
-  } else if (day > 0 && month > 6 && year > 12 && acceleration > -0.8) {
-    score += 5
+  } else if (
+    day > momentum.thresholds.dayMin &&
+    month > momentum.thresholds.monthMin &&
+    year > momentum.thresholds.yearMin
+  ) {
+    score += momentum.scoreAdjustment
     label = 'Momentum'
     tone = 'positive'
     detail = 'Confirmed uptrend across day, month and year — strongest signal.'
-  } else if (day < 0 && month < 0 && year < 0) {
-    score -= 8
+  } else if (
+    day < downtrend.thresholds.dayMax &&
+    month < downtrend.thresholds.monthMax &&
+    year < downtrend.thresholds.yearMax
+  ) {
+    score += downtrend.scoreAdjustment
     label = 'Downtrend'
     tone = 'negative'
     detail = 'Weakness remains across all tracked windows — avoid.'
-  } else if (day > 0 && month < 0 && year > 0) {
-    score += 3
+  } else if (
+    day > pullbackBounce.thresholds.dayMin &&
+    month < pullbackBounce.thresholds.monthMax &&
+    year > pullbackBounce.thresholds.yearMin
+  ) {
+    score += pullbackBounce.scoreAdjustment
     label = 'Pullback bounce'
     tone = 'caution'
     detail = 'Positive day while month is in correction — timing uncertain.'

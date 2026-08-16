@@ -38,6 +38,7 @@ import {
   trendTooltip,
 } from './utils'
 import { horizonByTrendLabel, passesRiskProfileFilter, recommendationScore } from './analyzer'
+import { TREND_ANALYSIS } from '../shared/trendAnalysisConstants'
 import { stockInsight } from './riskProfile'
 import { apiEndpoint, apiUrl, hasApiOriginConfigured } from './servicesAPI'
 import { FundamentalsView } from './FundamentalsView'
@@ -137,17 +138,22 @@ function formatDbExpiryLabel(isoDate: string): string | null {
 }
 
 function mapScreenerRow(row: ScreenerApiRow): EnrichedStock {
-  return {
+  const quote = {
     symbol: row.symbol,
-    name: row.name,
-    exchange: row.exchange,
     price: row.price,
     updatedAt: row.updatedAt,
     dayChange: row.dayChange,
     monthChange: row.monthChange,
     yearChange: row.yearChange,
+  }
+
+  return {
+    ...quote,
+    name: row.name,
+    exchange: row.exchange,
     country: row.country,
-    trend: row.trend,
+    // Recompute on client so profile picks follow latest Momentum rules even if DB labels are stale.
+    trend: analyzeTrend(quote),
   }
 }
 
@@ -166,38 +172,69 @@ function analyzeTrend(stock: StockQuote): TrendAnalysis {
     }
   }
 
-  const day = numberOrFallback(stock.dayChange, -100)
-  const month = numberOrFallback(stock.monthChange, -100)
-  const year = numberOrFallback(stock.yearChange, -100)
-  const acceleration = day - month / 21
+  const { missingChangeFallback, yearScoreCap, scoreWeights, patterns } = TREND_ANALYSIS
 
-  let score = day * 0.55 + month * 0.35 + year * 0.1
+  const day = numberOrFallback(stock.dayChange, missingChangeFallback)
+  const month = numberOrFallback(stock.monthChange, missingChangeFallback)
+  const year = numberOrFallback(stock.yearChange, missingChangeFallback)
+
+  // Cap year in score so +1000% 1Y lottery tickets don't outrank real Momentum setups.
+  const yearForScore = Math.max(Math.min(year, yearScoreCap), -yearScoreCap)
+  let score = day * scoreWeights.day + month * scoreWeights.month + yearForScore * scoreWeights.year
   let label: TrendLabel = 'Neutral'
   let tone: TrendTone = 'neutral'
   let detail = 'No clear trend signal yet.'
 
-  if (day > 1.1 && month < 4 && year < 18) {
-    score += 10
+  const {
+    earlyBreakout,
+    reversal,
+    momentum,
+    downtrend,
+    pullbackBounce,
+  } = patterns
+
+  if (
+    day > earlyBreakout.thresholds.dayMin &&
+    month < earlyBreakout.thresholds.monthMax &&
+    year < earlyBreakout.thresholds.yearMax
+  ) {
+    score += earlyBreakout.scoreAdjustment
     label = 'Early breakout'
     tone = 'speculative'
     detail = 'Strong daily move but unconfirmed by longer timeframes — high risk, could reverse.'
-  } else if (day > 0.4 && month > 0 && year < 0) {
-    score += 14
+  } else if (
+    day > reversal.thresholds.dayMin &&
+    month > reversal.thresholds.monthMin &&
+    year < reversal.thresholds.yearMax
+  ) {
+    score += reversal.scoreAdjustment
     label = 'Reversal'
     tone = 'caution'
     detail = 'Short-term momentum turning positive after weak year — watch for confirmation.'
-  } else if (day > 0 && month > 6 && year > 12 && acceleration > -0.8) {
-    score += 5
+  } else if (
+    day > momentum.thresholds.dayMin &&
+    month > momentum.thresholds.monthMin &&
+    year > momentum.thresholds.yearMin
+  ) {
+    score += momentum.scoreAdjustment
     label = 'Momentum'
     tone = 'positive'
     detail = 'Confirmed uptrend across day, month and year — strongest signal.'
-  } else if (day < 0 && month < 0 && year < 0) {
-    score -= 8
+  } else if (
+    day < downtrend.thresholds.dayMax &&
+    month < downtrend.thresholds.monthMax &&
+    year < downtrend.thresholds.yearMax
+  ) {
+    score += downtrend.scoreAdjustment
     label = 'Downtrend'
     tone = 'negative'
     detail = 'Weakness remains across all tracked windows — avoid.'
-  } else if (day > 0 && month < 0 && year > 0) {
-    score += 3
+  } else if (
+    day > pullbackBounce.thresholds.dayMin &&
+    month < pullbackBounce.thresholds.monthMax &&
+    year > pullbackBounce.thresholds.yearMin
+  ) {
+    score += pullbackBounce.scoreAdjustment
     label = 'Pullback bounce'
     tone = 'caution'
     detail = 'Positive day while month is in correction — timing uncertain.'
@@ -647,13 +684,13 @@ function App() {
         : sortedStocks
 
     return source
-      .filter((stock) => passesRiskProfileFilter(stock, riskProfile))
+      .filter((stock) => passesRiskProfileFilter(stock, riskProfile, investmentHorizon))
       .map((stock) => {
-        const score = recommendationScore(stock, riskProfile, investmentGoals)
+        const score = recommendationScore(stock, riskProfile, investmentGoals, investmentHorizon)
         return {
           ...stock,
           recommendationScore: score,
-          recommendedHorizon: horizonByTrendLabel(stock.trend.label, riskProfile),
+          recommendedHorizon: horizonByTrendLabel(stock.trend.label, riskProfile, investmentHorizon),
         }
       })
       .sort((a, b) => b.recommendationScore - a.recommendationScore)
@@ -661,6 +698,7 @@ function App() {
   }, [
     countryFilteredStocks,
     investmentGoals,
+    investmentHorizon,
     recommendationPool,
     riskProfile,
     screenerRows,
@@ -1263,15 +1301,41 @@ function App() {
       return
     }
 
-    const endpoint = apiEndpoint('/api/screener')
-    endpoint.searchParams.set('limit', '200')
-    endpoint.searchParams.set('sort', 'trend')
-    endpoint.searchParams.set('dir', 'desc')
+    // Pull actionable setups + strong movers. Client re-labels Momentum (DB labels can be stale).
+    const requests: Array<{ sort: 'trend' | 'month' | 'day'; trend?: string }> = [
+      { sort: 'month' },
+      { sort: 'day' },
+      { sort: 'trend' },
+      { sort: 'month', trend: 'Momentum' },
+      { sort: 'day', trend: 'Early breakout' },
+      { sort: 'day', trend: 'Reversal' },
+      { sort: 'month', trend: 'Pullback bounce' },
+    ]
 
-    void fetch(endpoint)
-      .then((response) => response.json())
-      .then((payload) => {
-        setRecommendationPool(((payload.data ?? []) as ScreenerApiRow[]).map(mapScreenerRow))
+    void Promise.all(
+      requests.map(async ({ sort, trend }) => {
+        const endpoint = apiEndpoint('/api/screener')
+        endpoint.searchParams.set('limit', '120')
+        endpoint.searchParams.set('sort', sort)
+        endpoint.searchParams.set('dir', 'desc')
+        if (trend) {
+          endpoint.searchParams.set('trend', trend)
+        }
+        const response = await fetch(endpoint)
+        const payload = await response.json()
+        return ((payload.data ?? []) as ScreenerApiRow[]).map(mapScreenerRow)
+      }),
+    )
+      .then((chunks) => {
+        const bySymbol = new Map<string, EnrichedStock>()
+        for (const chunk of chunks) {
+          for (const stock of chunk) {
+            if (!bySymbol.has(stock.symbol)) {
+              bySymbol.set(stock.symbol, stock)
+            }
+          }
+        }
+        setRecommendationPool([...bySymbol.values()])
       })
       .catch(() => setRecommendationPool([]))
   }, [screenerTotal, useDbScreener])

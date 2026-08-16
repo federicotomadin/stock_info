@@ -107,17 +107,6 @@ function TradingViewChart({ symbol }: { symbol: string }) {
   )
 }
 
-function isRateLimited(payload: FmpFundamentalsPayload | null): boolean {
-  if (!payload) return false
-  const errorFields = [
-    'profileError', 'keyMetricsTtmError', 'ratiosTtmError',
-    'incomeStatementError', 'balanceSheetError', 'cashFlowError',
-    'discountedCashFlowError',
-  ]
-  const errors = errorFields.map((f) => payload[f]).filter(Boolean) as string[]
-  return errors.length >= 3 && errors.some((e) => /limit\s*reach/i.test(e))
-}
-
 export function FundamentalsView({ symbol, onBackToScreener }: FundamentalsViewProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -163,8 +152,6 @@ export function FundamentalsView({ symbol, onBackToScreener }: FundamentalsViewP
       cancelled = true
     }
   }, [symbol])
-
-  const rateLimited = isRateLimited(payload)
 
   const profile = payload?.profile
   const km = payload?.keyMetricsTtm
@@ -260,18 +247,7 @@ export function FundamentalsView({ symbol, onBackToScreener }: FundamentalsViewP
       {loading ? <p className="status loading">Loading Financial Modeling Prep data…</p> : null}
       {error ? <p className="status error">{error}</p> : null}
 
-      {rateLimited ? (
-        <div className="status warning fundamentals-limit-banner">
-          <strong>FMP API limit reached.</strong> The free tier daily quota has been exhausted.
-          Fundamentals data will be available again tomorrow, or you can{' '}
-          <a href="https://site.financialmodelingprep.com/" target="_blank" rel="noreferrer noopener">
-            upgrade your FMP plan
-          </a>.
-          The live chart above still works independently.
-        </div>
-      ) : null}
-
-      {!loading && !error && payload && !rateLimited ? (
+      {!loading && !error && payload ? (
         <>
           {payload.profileError ? (
             <p className="status warning">Profile: {str(payload.profileError)}</p>
