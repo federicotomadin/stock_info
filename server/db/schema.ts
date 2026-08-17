@@ -25,6 +25,21 @@ export async function initSchema(): Promise<void> {
       synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS newsletter_subscribers (
+      id SERIAL PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      unsubscribe_token TEXT NOT NULL UNIQUE,
+      subscribed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      unsubscribed_at TIMESTAMPTZ
+    );
+
+    CREATE TABLE IF NOT EXISTS newsletter_sends (
+      id SERIAL PRIMARY KEY,
+      sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      recipients_count INT NOT NULL DEFAULT 0,
+      symbols TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS sync_runs (
       id SERIAL PRIMARY KEY,
       started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

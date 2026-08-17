@@ -10,6 +10,7 @@
     "server": "tsx server/index.ts",
     "db:up": "docker compose up -d postgres",
     "build": "tsc -p tsconfig.app.json --noEmit && vite build",
+    "postbuild": "node scripts/prerender.mjs",
     "build:analyze": "ANALYZE=true npm run build",
     "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.server.json",
     "lint": "eslint .",

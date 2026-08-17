@@ -27,6 +27,17 @@ services:
         sync: false
       - key: AI_PROVIDER
         sync: false
+      # Newsletter semanal (Top 20). Configurar en Render dashboard → Environment.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: NEWSLETTER_FROM_EMAIL
+        sync: false
+      # Debe coincidir con el secret NEWSLETTER_CRON_SECRET del workflow de GitHub Actions.
+      - key: NEWSLETTER_CRON_SECRET
+        sync: false
+      # Dominio público del sitio, usado en el link de "darse de baja" del email.
+      - key: SITE_ORIGIN
+        sync: false
       - key: DATABASE_URL
         fromDatabase:
           name: stock-info-db

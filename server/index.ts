@@ -14,6 +14,7 @@ import {
   scheduleMarketSync,
   syncMarketData,
 } from './db/sync'
+import { sendWeeklyDigest, subscribeToNewsletter, unsubscribeFromNewsletter } from './newsletter'
 
 const app = express()
 const PORT = Number(process.env.PORT || 9001)
@@ -62,6 +63,7 @@ let marketSnapshotProgressListeners = []
 let stooqDisabledUntil = 0
 
 app.use(cors())
+app.use(express.json())
 
 function toPercent(current, base) {
   if (!Number.isFinite(current) || !Number.isFinite(base) || base === 0) {
@@ -2427,6 +2429,52 @@ app.get('/api/stocks', async (req, res) => {
     data,
     failed,
   })
+})
+
+app.post('/api/newsletter/subscribe', async (req, res) => {
+  try {
+    const email = String(req.body?.email ?? '')
+    const result = await subscribeToNewsletter(email)
+    if (!result.ok) {
+      res.status(400).json(result)
+      return
+    }
+    res.json(result)
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error?.message ?? 'Could not subscribe.' })
+  }
+})
+
+app.post('/api/newsletter/unsubscribe', async (req, res) => {
+  try {
+    const token = String(req.body?.token ?? req.query.token ?? '')
+    const result = await unsubscribeFromNewsletter(token)
+    if (!result.ok) {
+      res.status(400).json(result)
+      return
+    }
+    res.json(result)
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error?.message ?? 'Could not unsubscribe.' })
+  }
+})
+
+// Triggered weekly by an external cron (GitHub Actions scheduled workflow). Protected by a
+// shared secret since it fans out real emails via Resend.
+app.post('/api/newsletter/send-weekly', async (req, res) => {
+  const secret = process.env.NEWSLETTER_CRON_SECRET?.trim()
+  const provided = req.get('x-cron-secret') ?? req.query.secret
+  if (!secret || provided !== secret) {
+    res.status(401).json({ error: 'Unauthorized' })
+    return
+  }
+
+  try {
+    const result = await sendWeeklyDigest()
+    res.json({ ok: true, ...result })
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error?.message ?? 'Could not send weekly digest.' })
+  }
 })
 
 app.get('/api/screener/status', async (_req, res) => {

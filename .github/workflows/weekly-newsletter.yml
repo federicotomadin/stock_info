@@ -1,0 +1,25 @@
+# Dispara el envío del Top 20 semanal llamando al endpoint protegido de la API en Render.
+# Requiere dos secrets/variables del repo:
+#   - API_ORIGIN: URL pública de la API (https://tu-api.onrender.com)
+#   - NEWSLETTER_CRON_SECRET: debe coincidir con el env var homónimo configurado en Render.
+
+name: Weekly newsletter
+
+on:
+  schedule:
+    # Lunes 09:00 UTC (~06:00 ART). Ajustá el cron si querés otro día/hora.
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger weekly digest
+        env:
+          API_ORIGIN: ${{ secrets.API_ORIGIN || vars.API_ORIGIN }}
+          NEWSLETTER_CRON_SECRET: ${{ secrets.NEWSLETTER_CRON_SECRET }}
+        run: |
+          curl --fail-with-body -sS -X POST \
+            -H "x-cron-secret: $NEWSLETTER_CRON_SECRET" \
+            "$API_ORIGIN/api/newsletter/send-weekly"

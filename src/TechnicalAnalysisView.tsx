@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { apiEndpoint } from './servicesAPI'
+import { apiEndpoint } from './services/servicesAPI.ts'
 
 interface TechnicalAnalysisViewProps {
   symbol: string

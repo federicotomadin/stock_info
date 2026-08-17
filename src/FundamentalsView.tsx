@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { cleanCompanyName } from './utils'
-import { apiEndpoint } from './servicesAPI'
+import { apiEndpoint } from './services/servicesAPI.ts'
+import { applySeoTags, resetSeoTags } from './seo'
 
 interface FundamentalsViewProps {
   symbol: string
@@ -152,6 +153,26 @@ export function FundamentalsView({ symbol, onBackToScreener }: FundamentalsViewP
       cancelled = true
     }
   }, [symbol])
+
+  useEffect(() => {
+    const companyName = payload?.profile
+      ? cleanCompanyName(str(payload.profile.companyName)) || symbol
+      : symbol
+    const sector = payload?.profile?.sector ? String(payload.profile.sector) : null
+    const description = sector
+      ? `${companyName} (${symbol}) stock: live chart, ${sector.toLowerCase()} fundamentals, valuation ratios and AI-assisted technical analysis.`
+      : `${companyName} (${symbol}) stock: live chart, fundamentals, valuation ratios and AI-assisted technical analysis.`
+
+    applySeoTags({
+      title: `${companyName} (${symbol}) Stock — Price, Fundamentals & Trend`,
+      description,
+      path: `stock/${symbol}`,
+    })
+
+    return () => {
+      resetSeoTags()
+    }
+  }, [payload?.profile, symbol])
 
   const profile = payload?.profile
   const km = payload?.keyMetricsTtm
