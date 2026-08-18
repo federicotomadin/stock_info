@@ -27,10 +27,13 @@ const SNAPSHOT_BATCH_SIZE = 120
 const SNAPSHOT_BATCH_CONCURRENCY = 6
 const SNAPSHOT_SYMBOL_CONCURRENCY = 8
 const SNAPSHOT_CACHE_FILE = path.join(process.cwd(), '.cache', 'market-snapshot.json')
-const PROFILE_CACHE_TTL_MS = 12 * 60 * 60 * 1000
+const PROFILE_CACHE_TTL_MS = 48 * 60 * 60 * 1000
 const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY?.trim()
 const FMP_API_KEY = process.env.FMP_API_KEY?.trim()
-const FMP_FUNDAMENTALS_CACHE_TTL_MS = 60 * 60 * 1000
+// Fundamentals change at most quarterly; a long TTL keeps FMP's 250 req/day free
+// quota from being burned by re-visits or dev-server restarts within the same day.
+const FMP_FUNDAMENTALS_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const FMP_FUNDAMENTALS_CACHE_FILE = path.join(process.cwd(), '.cache', 'fmp-fundamentals.json')
 const fmpFundamentalsCache = new Map()
 
 // --- AI provider (provider-agnostic: gemini | claude | groq) ---
@@ -40,8 +43,11 @@ const GEMINI_MODEL = (process.env.GEMINI_MODEL || 'gemini-2.0-flash').trim()
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY?.trim()
 const CLAUDE_MODEL = (process.env.CLAUDE_MODEL || 'claude-sonnet-4-5').trim()
 const GROQ_API_KEY = process.env.GROQ_API_KEY?.trim()
-const GROQ_MODEL = (process.env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim()
-const TECHNICAL_ANALYSIS_CACHE_TTL_MS = 6 * 60 * 60 * 1000
+// llama-3.3-70b-versatile was decommissioned by Groq on 2026-08-16; gpt-oss-120b is their
+// recommended replacement (see console.groq.com/docs/deprecations).
+const GROQ_MODEL = (process.env.GROQ_MODEL || 'openai/gpt-oss-120b').trim()
+const TECHNICAL_ANALYSIS_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const TECHNICAL_ANALYSIS_CACHE_FILE = path.join(process.cwd(), '.cache', 'technical-analysis.json')
 const technicalAnalysisCache = new Map()
 /** Curated fundamentals when public APIs resolve the wrong Wikipedia/Wikidata entity. */
 const PROFILE_SYMBOL_OVERRIDES = {
@@ -2138,6 +2144,39 @@ async function saveMarketSnapshotToDisk(snapshot) {
   }
 }
 
+// Generic disk persistence for the per-symbol Maps below (FMP fundamentals, technical
+// analysis). Without this, every `npm run dev` restart wipes the in-memory cache and the
+// next page view re-burns FMP's free 250 req/day quota re-fetching the same tickers.
+async function loadMapCacheFromDisk(file, targetMap, ttlMs) {
+  try {
+    const raw = await fs.readFile(file, 'utf8')
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return
+    const now = Date.now()
+    let loaded = 0
+    for (const [symbol, entry] of Object.entries(parsed)) {
+      if (entry?.savedAt && now - entry.savedAt < ttlMs) {
+        targetMap.set(symbol, entry)
+        loaded += 1
+      }
+    }
+    if (loaded) {
+      console.log(`Loaded ${loaded} cached entr${loaded === 1 ? 'y' : 'ies'} from ${path.basename(file)}`)
+    }
+  } catch {
+    // No cache file yet.
+  }
+}
+
+async function saveMapCacheToDisk(file, sourceMap) {
+  try {
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await fs.writeFile(file, JSON.stringify(Object.fromEntries(sourceMap)))
+  } catch (error) {
+    console.warn(`Could not persist ${path.basename(file)}:`, error?.message ?? error)
+  }
+}
+
 async function buildMarketSnapshotBatches(symbols, onBatchComplete) {
   const batches = []
   for (let index = 0; index < symbols.length; index += SNAPSHOT_BATCH_SIZE) {
@@ -2730,6 +2769,7 @@ app.get('/api/fmp/fundamentals', async (req, res) => {
   try {
     const data = await fetchFmpFundamentalsBundle(symbol)
     fmpFundamentalsCache.set(symbol, { value: data, savedAt: Date.now() })
+    saveMapCacheToDisk(FMP_FUNDAMENTALS_CACHE_FILE, fmpFundamentalsCache)
     res.json({ cache: 'miss', ...data })
   } catch (error) {
     res.status(500).json({
@@ -2839,6 +2879,7 @@ app.get('/api/technical-analysis', async (req, res) => {
     const aiSucceeded = analysis !== null
     if (aiSucceeded) {
       technicalAnalysisCache.set(symbol, { value: responsePayload, savedAt: Date.now() })
+      saveMapCacheToDisk(TECHNICAL_ANALYSIS_CACHE_FILE, technicalAnalysisCache)
     }
     res.json({ cache: aiSucceeded ? 'miss' : 'no-cache', ...responsePayload })
   } catch (error) {
@@ -2895,6 +2936,9 @@ server.on('error', (error) => {
 
 server.listen(PORT, async () => {
   console.log(`Stock API server running on http://localhost:${PORT}`)
+
+  await loadMapCacheFromDisk(FMP_FUNDAMENTALS_CACHE_FILE, fmpFundamentalsCache, FMP_FUNDAMENTALS_CACHE_TTL_MS)
+  await loadMapCacheFromDisk(TECHNICAL_ANALYSIS_CACHE_FILE, technicalAnalysisCache, TECHNICAL_ANALYSIS_CACHE_TTL_MS)
 
   if (isDatabaseEnabled()) {
     const retryDelaysMs = [0, 2_000, 5_000, 10_000]
