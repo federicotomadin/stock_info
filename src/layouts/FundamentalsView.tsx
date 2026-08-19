@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { cleanCompanyName } from './utils'
-import { apiEndpoint } from './services/servicesAPI.ts'
-import { applySeoTags, resetSeoTags } from './seo'
+import { cleanCompanyName } from '../utils.ts'
+import { apiEndpoint } from '../services/servicesAPI.ts'
+import { applySeoTags, resetSeoTags } from '../seo.ts'
 
 interface FundamentalsViewProps {
   symbol: string

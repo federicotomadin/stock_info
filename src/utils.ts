@@ -1,6 +1,6 @@
 import { MAX_SYMBOLS } from './constants/app'
 import { TREND_MEANINGS } from './models/constants'
-import type { TrendLabel } from './types/stock'
+import type { CompanyProfile, TrendLabel } from './types/stock'
 
 /** Splits a comma-separated ticker string into unique, uppercased symbols, capped at MAX_SYMBOLS. */
 export const parseSymbols = (rawInput: string): string[] => {
@@ -50,6 +50,39 @@ export const numberOrFallback = (value: number | null, fallback = 0): number => 
 /** Builds the tooltip text for a trend chip: known label meaning, falling back to its own detail. */
 export const trendTooltip = (label: TrendLabel, detail: string): string => {
   return `${label}: ${TREND_MEANINGS[label] ?? detail}`
+}
+
+/**
+ * Builds a richer multi-line tooltip for the company name cell: ticker + name, then sector/industry
+ * and years-operating/business-summary once the on-hover profile fetch resolves. Falls back to just
+ * the name while the profile is still loading (or if every data source failed for that symbol).
+ */
+export const companyTooltip = (
+  symbol: string,
+  name: string | null,
+  profile: CompanyProfile | null
+): string => {
+  const lines = [`${symbol} — ${name ?? 'N/A'}`]
+
+  const classification = [profile?.sector, profile?.industry].filter(Boolean).join(' · ')
+  if (classification) {
+    lines.push(classification)
+  }
+
+  if (profile?.yearsOperating) {
+    const verb = profile.yearsSource === 'founded' ? 'Fundada hace' : 'Cotizando hace'
+    lines.push(`${verb} ${profile.yearsOperating} años`)
+  }
+
+  if (profile?.businessSummary) {
+    lines.push(
+      profile.businessSummary.length > 240
+        ? `${profile.businessSummary.slice(0, 237)}...`
+        : profile.businessSummary
+    )
+  }
+
+  return lines.join('\n')
 }
 
 /** Strips the "- Common Stock" / "Common Stock" suffix some data providers append to company names. */

@@ -5,6 +5,9 @@ interface TickerActionsMenuProps {
   onOpenFundamentals: () => void
   onOpenTechnical: () => void
   className?: string
+  /** Extra tooltip text (e.g. company sector/summary) prepended above "Abrir menú de análisis". */
+  tooltip?: string
+  onHover?: () => void
 }
 
 export function TickerActionsMenu({
@@ -12,6 +15,8 @@ export function TickerActionsMenu({
   onOpenFundamentals,
   onOpenTechnical,
   className = 'ticker-link',
+  tooltip,
+  onHover,
 }: TickerActionsMenuProps) {
   const [open, setOpen] = useState(false)
   const [menuStyle, setMenuStyle] = useState<CSSProperties>({})
@@ -88,14 +93,14 @@ export function TickerActionsMenu({
   }, [open])
 
   return (
-    <span className="ticker-actions" ref={containerRef}>
+    <span className="ticker-actions" ref={containerRef} onMouseEnter={onHover}>
       <button
         type="button"
         className={className}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        title="Abrir menú de análisis"
+        title={tooltip ? `${tooltip}\n\nAbrir menú de análisis` : 'Abrir menú de análisis'}
       >
         {symbol}
       </button>

@@ -253,7 +253,7 @@
 .pagination {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.75rem;
   font-size: 0.875rem;
   color: var(--color-text-secondary);
   font-weight: 500;
@@ -262,6 +262,12 @@
 .pagination-label {
   font-weight: 600;
   margin-right: 0.25rem;
+}
+
+/* The default .btn padding reads as cramped here — bump it so Previous/Next feel like
+   proper pill buttons instead of bare text sitting next to the label. */
+.pagination .btn {
+  padding: 0.5rem 1.75rem;
 }
 
 /* ------------------------------------------------------------------ */

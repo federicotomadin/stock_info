@@ -1,7 +1,7 @@
 import { INVESTMENT_GOALS } from '../models/constants'
 import { TickerActionsMenu } from './TickerActionsMenu'
 import { cleanCompanyName, formatPercent, metricClass } from '../utils'
-import { stockInsight } from '../riskProfile'
+import { stockInsight } from '../riskProfile.ts'
 import type {
   CompanyProfile,
   EnrichedStock,

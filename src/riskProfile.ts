@@ -1,5 +1,5 @@
-import { cleanCompanyName } from './utils'
-import type { CompanyProfile, EnrichedStock } from './types/stock'
+import { cleanCompanyName } from './utils.ts'
+import type { CompanyProfile, EnrichedStock } from './types/stock.ts'
 
 export const shortSummary = (summary: string | null | undefined, maxLength = 220): string | null => {
   if (!summary) {

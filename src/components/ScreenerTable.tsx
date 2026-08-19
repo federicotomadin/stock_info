@@ -1,6 +1,7 @@
 import { SortableHeader } from './SortableHeader'
 import { TickerActionsMenu } from './TickerActionsMenu'
-import { cleanCompanyName, formatPercent, metricClass, trendTooltip } from '../utils'
+import { useTickerHoverProfiles } from '../hooks/useTickerHoverProfiles'
+import { cleanCompanyName, companyTooltip, formatPercent, metricClass, trendTooltip } from '../utils'
 import type { EnrichedStock, SortDirection, SortMetric, TrendLabel, CountryLabel } from '../types/stock'
 
 interface ScreenerTableProps {
@@ -32,6 +33,8 @@ export function ScreenerTable({
   countryFilter,
   hasAnySortedStocks,
 }: ScreenerTableProps) {
+  const { getProfile, requestProfile } = useTickerHoverProfiles()
+
   return (
     <div className="table-panel">
       <div className="table-panel-scroll">
@@ -89,9 +92,15 @@ export function ScreenerTable({
                     symbol={stock.symbol}
                     onOpenFundamentals={() => onOpenFundamentals(stock.symbol)}
                     onOpenTechnical={() => onOpenTechnical(stock.symbol)}
+                    tooltip={companyTooltip(stock.symbol, cleanCompanyName(stock.name), getProfile(stock.symbol))}
+                    onHover={() => requestProfile(stock.symbol)}
                   />
                 </td>
-                <td className="cell-name col-name" title={cleanCompanyName(stock.name) ?? 'N/A'}>
+                <td
+                  className="cell-name col-name"
+                  title={companyTooltip(stock.symbol, cleanCompanyName(stock.name), getProfile(stock.symbol))}
+                  onMouseEnter={() => requestProfile(stock.symbol)}
+                >
                   {cleanCompanyName(stock.name) ?? 'N/A'}
                 </td>
                 <td className="col-exchange" title={stock.exchange ?? 'N/A'}>
