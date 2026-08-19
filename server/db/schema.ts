@@ -20,10 +20,19 @@ export async function initSchema(): Promise<void> {
       day_change DOUBLE PRECISION,
       month_change DOUBLE PRECISION,
       year_change DOUBLE PRECISION,
+      rsi_14 DOUBLE PRECISION,
+      sma_20 DOUBLE PRECISION,
+      sma_50 DOUBLE PRECISION,
+      sma_200 DOUBLE PRECISION,
       trend_score DOUBLE PRECISION NOT NULL DEFAULT 0,
       trend_label TEXT NOT NULL DEFAULT 'Neutral',
       synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    ALTER TABLE stock_quotes ADD COLUMN IF NOT EXISTS rsi_14 DOUBLE PRECISION;
+    ALTER TABLE stock_quotes ADD COLUMN IF NOT EXISTS sma_20 DOUBLE PRECISION;
+    ALTER TABLE stock_quotes ADD COLUMN IF NOT EXISTS sma_50 DOUBLE PRECISION;
+    ALTER TABLE stock_quotes ADD COLUMN IF NOT EXISTS sma_200 DOUBLE PRECISION;
 
     CREATE TABLE IF NOT EXISTS newsletter_subscribers (
       id SERIAL PRIMARY KEY,

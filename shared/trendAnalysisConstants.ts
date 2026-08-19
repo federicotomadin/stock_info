@@ -29,4 +29,22 @@ export const TREND_ANALYSIS = {
       scoreAdjustment: 3,
     },
   },
+  // Optional technical confirmation — only applied when rsi14/sma20/sma50 are available
+  // (derived for free from the daily-close series already fetched for % change math).
+  // These nudge the score/tone within the same label, they never change which label wins,
+  // so existing filters keyed on TrendLabel strings keep working unchanged.
+  technical: {
+    // Golden/death cross bias: small deterministic tilt from the SMA20 vs SMA50 relationship.
+    smaCrossBias: 4,
+    // Classic 50/200 golden/death cross — weaker weight since it lags more.
+    smaLongCrossBias: 3,
+    // Momentum/Early breakout confirmed by % change but RSI already very overbought is a
+    // higher-risk chase — soften the score and flag caution instead of outright bullish.
+    rsiOverboughtThreshold: 75,
+    rsiOverboughtPenaltyPerPoint: 0.6,
+    // Downtrend with RSI already deeply oversold may be closer to a bounce than fresh weakness —
+    // soften the penalty slightly without relabeling it (still a downtrend for risk filters).
+    rsiOversoldThreshold: 25,
+    rsiOversoldReliefPerPoint: 0.4,
+  },
 } as const

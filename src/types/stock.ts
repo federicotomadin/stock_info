@@ -22,6 +22,11 @@ export interface StockQuote {
   dayChange: number | null
   monthChange: number | null
   yearChange: number | null
+  /** Derived from the same daily-close series used for day/month/year change — no extra API cost. */
+  rsi14?: number | null
+  sma20?: number | null
+  sma50?: number | null
+  sma200?: number | null
 }
 
 export interface UniverseItem {

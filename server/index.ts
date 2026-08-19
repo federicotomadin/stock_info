@@ -1436,35 +1436,18 @@ function buildStockFromCsv(symbol, csv) {
 
   const rows = lines.slice(1).map((line) => line.split(','))
   const latest = rows.at(-1)
-  const previous = rows.at(-2)
-  const monthBase = rows.at(Math.max(rows.length - 22, 0))
-  const yearBase = rows.at(Math.max(rows.length - 253, 0))
-
-  if (!latest || !previous || !monthBase || !yearBase) {
+  if (!latest) {
     throw new Error(`Not enough historical data for ${symbol}.`)
   }
 
-  const latestClose = Number(latest[4])
-  const previousClose = Number(previous[4])
-  const monthClose = Number(monthBase[4])
-  const yearClose = Number(yearBase[4])
-
-  if (!Number.isFinite(latestClose)) {
-    throw new Error(`Could not parse price for ${symbol}.`)
-  }
-
-  return {
-    symbol,
-    price: latestClose,
-    updatedAt: latest[0],
-    dayChange: toPercent(latestClose, previousClose),
-    monthChange: toPercent(latestClose, monthClose),
-    yearChange: toPercent(latestClose, yearClose),
-  }
+  const closes = rows.map((row) => Number(row[4]))
+  return buildStockFromSortedDailyCloses(symbol, closes, latest[0])
 }
 
 /**
  * Daily closes in chronological order (oldest → newest). Null/NaN entries are allowed between valid closes.
+ * Also derives SMA20/50/200 and RSI14 from the same series — it's already downloaded for the
+ * day/month/year % change math below, so this is free (no extra FMP/Yahoo/Stooq requests).
  */
 function buildStockFromSortedDailyCloses(symbol, closes, updatedAtRaw) {
   if (!Array.isArray(closes) || !closes.length) {
@@ -1495,6 +1478,8 @@ function buildStockFromSortedDailyCloses(symbol, closes, updatedAtRaw) {
     updatedAt = String(updatedAtRaw).slice(0, 10)
   }
 
+  const closesUpToLatest = closes.slice(0, latestIndex + 1).filter((v) => Number.isFinite(v))
+
   return {
     symbol,
     price: latestClose,
@@ -1502,6 +1487,10 @@ function buildStockFromSortedDailyCloses(symbol, closes, updatedAtRaw) {
     dayChange: Number.isFinite(previousClose) ? toPercent(latestClose, previousClose) : null,
     monthChange: Number.isFinite(monthClose) ? toPercent(latestClose, monthClose) : null,
     yearChange: Number.isFinite(yearClose) ? toPercent(latestClose, yearClose) : null,
+    rsi14: rsi(closesUpToLatest, 14),
+    sma20: sma(closesUpToLatest, 20),
+    sma50: sma(closesUpToLatest, 50),
+    sma200: sma(closesUpToLatest, 200),
   }
 }
 

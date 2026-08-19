@@ -11,6 +11,10 @@ export interface ScreenerApiRow {
   dayChange: number | null
   monthChange: number | null
   yearChange: number | null
+  rsi14?: number | null
+  sma20?: number | null
+  sma50?: number | null
+  sma200?: number | null
   trend: TrendAnalysis
 }
 
@@ -59,6 +63,10 @@ export function mapScreenerRow(row: ScreenerApiRow): EnrichedStock {
     dayChange: row.dayChange,
     monthChange: row.monthChange,
     yearChange: row.yearChange,
+    rsi14: row.rsi14,
+    sma20: row.sma20,
+    sma50: row.sma50,
+    sma200: row.sma200,
   }
 
   return {

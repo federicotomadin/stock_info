@@ -21,6 +21,10 @@ export interface QuoteLike {
   dayChange: number | null
   monthChange: number | null
   yearChange: number | null
+  rsi14?: number | null
+  sma20?: number | null
+  sma50?: number | null
+  sma200?: number | null
 }
 
 function numberOrFallback(value: number | null | undefined, fallback: number): number {
@@ -109,5 +113,61 @@ export function analyzeTrend(stock: QuoteLike): TrendAnalysis {
     detail = 'Positive day while month is in correction — timing uncertain.'
   }
 
+  applyTechnicalConfirmation(stock, { label, score, tone, detail }, (next) => {
+    score = next.score
+    tone = next.tone
+    detail = next.detail
+  })
+
   return { score, label, tone, detail }
+}
+
+/**
+ * Nudges score/tone/detail using RSI14 + SMA cross data when available. Never changes `label`
+ * (it's derived purely from day/month/year thresholds above) so existing filters keyed on
+ * TrendLabel strings — e.g. passesRiskProfileFilter — keep behaving exactly as before.
+ */
+function applyTechnicalConfirmation(
+  stock: QuoteLike,
+  current: { label: TrendLabel; score: number; tone: TrendTone; detail: string },
+  apply: (next: { score: number; tone: TrendTone; detail: string }) => void
+): void {
+  const { technical } = TREND_ANALYSIS
+  let { score, tone, detail } = current
+  const notes: string[] = []
+
+  const sma20 = stock.sma20
+  const sma50 = stock.sma50
+  const sma200 = stock.sma200
+
+  if (Number.isFinite(sma20) && Number.isFinite(sma50) && sma50 !== 0) {
+    score += sma20! > sma50! ? technical.smaCrossBias : -technical.smaCrossBias
+  }
+  if (Number.isFinite(sma50) && Number.isFinite(sma200) && sma200 !== 0) {
+    score += sma50! > sma200! ? technical.smaLongCrossBias : -technical.smaLongCrossBias
+  }
+
+  const rsi14 = stock.rsi14
+  if (Number.isFinite(rsi14)) {
+    if (
+      (current.label === 'Momentum' || current.label === 'Early breakout') &&
+      rsi14! > technical.rsiOverboughtThreshold
+    ) {
+      const excess = rsi14! - technical.rsiOverboughtThreshold
+      score -= excess * technical.rsiOverboughtPenaltyPerPoint
+      tone = 'caution'
+      notes.push('RSI14 ya sobrecomprado — señal de persecución, mayor riesgo de reversión.')
+    }
+    if (current.label === 'Downtrend' && rsi14! < technical.rsiOversoldThreshold) {
+      const relief = technical.rsiOversoldThreshold - rsi14!
+      score += relief * technical.rsiOversoldReliefPerPoint
+      notes.push('RSI14 en sobreventa — posible rebote técnico, seguí vigilando.')
+    }
+  }
+
+  if (notes.length) {
+    detail = `${detail} ${notes.join(' ')}`
+  }
+
+  apply({ score, tone, detail })
 }

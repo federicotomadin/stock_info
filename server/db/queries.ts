@@ -14,6 +14,10 @@ export interface ScreenerRow {
   dayChange: number | null
   monthChange: number | null
   yearChange: number | null
+  rsi14: number | null
+  sma20: number | null
+  sma50: number | null
+  sma200: number | null
   trendScore: number
   trendLabel: string
 }
@@ -119,6 +123,10 @@ export async function queryScreener(raw: ScreenerQuery): Promise<ScreenerResult>
        q.day_change,
        q.month_change,
        q.year_change,
+       q.rsi_14,
+       q.sma_20,
+       q.sma_50,
+       q.sma_200,
        q.trend_score,
        q.trend_label
      FROM tickers t
@@ -134,7 +142,19 @@ export async function queryScreener(raw: ScreenerQuery): Promise<ScreenerResult>
     const dayChange = row.day_change == null ? null : Number(row.day_change)
     const monthChange = row.month_change == null ? null : Number(row.month_change)
     const yearChange = row.year_change == null ? null : Number(row.year_change)
-    const trendAnalysis = analyzeTrend({ dayChange, monthChange, yearChange })
+    const rsi14 = row.rsi_14 == null ? null : Number(row.rsi_14)
+    const sma20 = row.sma_20 == null ? null : Number(row.sma_20)
+    const sma50 = row.sma_50 == null ? null : Number(row.sma_50)
+    const sma200 = row.sma_200 == null ? null : Number(row.sma_200)
+    const trendAnalysis = analyzeTrend({
+      dayChange,
+      monthChange,
+      yearChange,
+      rsi14,
+      sma20,
+      sma50,
+      sma200,
+    })
 
     return {
       symbol: row.symbol,
@@ -148,6 +168,10 @@ export async function queryScreener(raw: ScreenerQuery): Promise<ScreenerResult>
       dayChange,
       monthChange,
       yearChange,
+      rsi14,
+      sma20,
+      sma50,
+      sma200,
       trendScore: Number(row.trend_score),
       trendLabel: row.trend_label,
       trend: trendAnalysis,
@@ -171,6 +195,10 @@ export interface UpsertQuoteInput {
   dayChange: number | null
   monthChange: number | null
   yearChange: number | null
+  rsi14?: number | null
+  sma20?: number | null
+  sma50?: number | null
+  sma200?: number | null
   trendScore: number
   trendLabel: string
 }
@@ -200,15 +228,19 @@ export async function upsertQuote(input: UpsertQuoteInput): Promise<boolean> {
   const result = await pool.query(
     `INSERT INTO stock_quotes (
        symbol, price, quote_updated_at, day_change, month_change, year_change,
-       trend_score, trend_label, synced_at
+       rsi_14, sma_20, sma_50, sma_200, trend_score, trend_label, synced_at
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
      ON CONFLICT (symbol) DO UPDATE SET
        price = EXCLUDED.price,
        quote_updated_at = EXCLUDED.quote_updated_at,
        day_change = EXCLUDED.day_change,
        month_change = EXCLUDED.month_change,
        year_change = EXCLUDED.year_change,
+       rsi_14 = EXCLUDED.rsi_14,
+       sma_20 = EXCLUDED.sma_20,
+       sma_50 = EXCLUDED.sma_50,
+       sma_200 = EXCLUDED.sma_200,
        trend_score = EXCLUDED.trend_score,
        trend_label = EXCLUDED.trend_label,
        synced_at = NOW()
@@ -217,6 +249,10 @@ export async function upsertQuote(input: UpsertQuoteInput): Promise<boolean> {
         OR stock_quotes.day_change IS DISTINCT FROM EXCLUDED.day_change
         OR stock_quotes.month_change IS DISTINCT FROM EXCLUDED.month_change
         OR stock_quotes.year_change IS DISTINCT FROM EXCLUDED.year_change
+        OR stock_quotes.rsi_14 IS DISTINCT FROM EXCLUDED.rsi_14
+        OR stock_quotes.sma_20 IS DISTINCT FROM EXCLUDED.sma_20
+        OR stock_quotes.sma_50 IS DISTINCT FROM EXCLUDED.sma_50
+        OR stock_quotes.sma_200 IS DISTINCT FROM EXCLUDED.sma_200
         OR stock_quotes.trend_score IS DISTINCT FROM EXCLUDED.trend_score
         OR stock_quotes.trend_label IS DISTINCT FROM EXCLUDED.trend_label
      RETURNING symbol`,
@@ -227,6 +263,10 @@ export async function upsertQuote(input: UpsertQuoteInput): Promise<boolean> {
       input.dayChange,
       input.monthChange,
       input.yearChange,
+      input.rsi14 ?? null,
+      input.sma20 ?? null,
+      input.sma50 ?? null,
+      input.sma200 ?? null,
       input.trendScore,
       input.trendLabel,
     ]

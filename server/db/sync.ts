@@ -22,6 +22,10 @@ export interface StockQuote {
   dayChange: number | null
   monthChange: number | null
   yearChange: number | null
+  rsi14?: number | null
+  sma20?: number | null
+  sma50?: number | null
+  sma200?: number | null
 }
 
 export interface SyncProgress {
@@ -145,6 +149,10 @@ async function runSync(deps: SyncDeps, force: boolean): Promise<void> {
                 dayChange: quote.dayChange,
                 monthChange: quote.monthChange,
                 yearChange: quote.yearChange,
+                rsi14: quote.rsi14,
+                sma20: quote.sma20,
+                sma50: quote.sma50,
+                sma200: quote.sma200,
                 trendScore: trend.score,
                 trendLabel: trend.label,
               })
