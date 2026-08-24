@@ -179,6 +179,9 @@ export function FundamentalsView({ symbol, onBackToScreener }: FundamentalsViewP
   const ratios = payload?.ratiosTtm
   const dcf = payload?.discountedCashFlow
   const income = payload?.incomeStatementAnnual ?? []
+  const fallbackFields = Array.isArray(payload?.fallbackFields)
+    ? payload.fallbackFields.filter((field) => typeof field === 'string')
+    : []
 
   const dcfValue = dcf?.dcf
   const stockPriceFromDcf = dcf?.['Stock Price'] ?? dcf?.stockPrice
@@ -252,6 +255,14 @@ export function FundamentalsView({ symbol, onBackToScreener }: FundamentalsViewP
           ) : null}
           {payload?.dataSource ? (
             <span className="source-badge">Data: {str(payload.dataSource)}</span>
+          ) : null}
+          {fallbackFields.length ? (
+            <span
+              className="source-badge"
+              title="These sections came from Finnhub because FMP's free tier doesn't include them."
+            >
+              Finnhub fallback: {fallbackFields.join(', ')}
+            </span>
           ) : null}
         </div>
       </section>

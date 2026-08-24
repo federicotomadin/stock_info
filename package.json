@@ -14,6 +14,7 @@
     "build:analyze": "ANALYZE=true npm run build",
     "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.server.json",
     "lint": "eslint .",
+    "test": "vitest run",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -42,6 +43,7 @@
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.1",
-    "vite": "^8.0.1"
+    "vite": "^8.0.1",
+    "vitest": "^4.1.11"
   }
 }
