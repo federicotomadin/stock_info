@@ -1,6 +1,14 @@
 export const RECENTLY_LISTED_DETAIL =
   'Recently listed — less than one year of trading history, trend not confirmed yet.'
 
+/** Chase-risk guards applied to recommendations only; trend labels stay untouched. */
+export const RECOMMENDATION_GUARDS = {
+  // Momentum/Early breakout with RSI14 above this is overextended and prone to next-day pullbacks.
+  maxRsiForBullishEntry: 75,
+  // Momentum with a monthly move above this (%) is a blow-off run, not a sustainable trend.
+  maxMomentumMonthChange: 40,
+} as const
+
 /** Shared trend scoring thresholds — keep server/db/trend.ts and client analyzeTrend in sync. */
 export const TREND_ANALYSIS = {
   missingChangeFallback: -100,

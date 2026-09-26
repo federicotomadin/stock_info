@@ -1,4 +1,5 @@
 import { numberOrFallback } from './utils'
+import { RECOMMENDATION_GUARDS } from '../shared/trendAnalysisConstants'
 import type { EnrichedStock, InvestmentGoalId, RiskProfile, TrendLabel } from './types/stock'
 
 export type PreferredHorizon = 'short' | 'medium' | 'long'
@@ -51,6 +52,15 @@ export const horizonByTrendLabel = (
   return 'Watchlist (avoid entry for now)'
 }
 
+const isOverextendedEntry = (stock: EnrichedStock, label: TrendLabel): boolean => {
+  const { maxRsiForBullishEntry, maxMomentumMonthChange } = RECOMMENDATION_GUARDS
+  const isBullishSetup = label === 'Momentum' || label === 'Early breakout'
+  if (isBullishSetup && Number.isFinite(stock.rsi14) && stock.rsi14! > maxRsiForBullishEntry) {
+    return true
+  }
+  return label === 'Momentum' && numberOrFallback(stock.monthChange, 0) > maxMomentumMonthChange
+}
+
 const cappedPositive = (value: number, cap: number): number => Math.min(Math.max(value, 0), cap)
 
 export const passesRiskProfileFilter = (
@@ -64,6 +74,9 @@ export const passesRiskProfileFilter = (
   }
   // Recent listings (<1Y of history) have no confirmed trend and tend to mean-revert right after a pop.
   if (!Number.isFinite(stock.yearChange)) {
+    return false
+  }
+  if (isOverextendedEntry(stock, label)) {
     return false
   }
 
