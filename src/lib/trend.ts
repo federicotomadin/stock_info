@@ -1,5 +1,5 @@
 import { numberOrFallback } from '../utils'
-import { TREND_ANALYSIS } from '../../shared/trendAnalysisConstants'
+import { RECENTLY_LISTED_DETAIL, TREND_ANALYSIS } from '../../shared/trendAnalysisConstants'
 import type { StockQuote, TrendAnalysis, TrendLabel, TrendTone } from '../types/stock'
 
 /**
@@ -7,16 +7,13 @@ import type { StockQuote, TrendAnalysis, TrendLabel, TrendTone } from '../types/
  * numeric score used for sorting. Mirrors server/db/trend.ts so client and server stay consistent.
  */
 export function analyzeTrend(stock: StockQuote): TrendAnalysis {
-  const hasMonth = Number.isFinite(stock.monthChange)
-  const hasYear = Number.isFinite(stock.yearChange)
-
-  // Newly IPO'd or otherwise no-history tickers: don't pretend it's a "downtrend".
-  if (!hasMonth && !hasYear) {
+  // Without a full year the -100 fallback would mislabel IPOs as Reversal/Early breakout.
+  if (!Number.isFinite(stock.yearChange)) {
     return {
       score: 0,
       label: 'Neutral',
       tone: 'neutral',
-      detail: 'Recently listed — not enough historical data to compute a trend yet.',
+      detail: RECENTLY_LISTED_DETAIL,
     }
   }
 

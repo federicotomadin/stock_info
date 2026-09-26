@@ -1,4 +1,4 @@
-import { TREND_ANALYSIS } from '../../shared/trendAnalysisConstants.js'
+import { RECENTLY_LISTED_DETAIL, TREND_ANALYSIS } from '../../shared/trendAnalysisConstants.js'
 
 export type TrendLabel =
   | 'Early breakout'
@@ -33,15 +33,13 @@ function numberOrFallback(value: number | null | undefined, fallback: number): n
 
 /** Mirrors frontend analyzeTrend() so sort/filter labels stay consistent. */
 export function analyzeTrend(stock: QuoteLike): TrendAnalysis {
-  const hasMonth = Number.isFinite(stock.monthChange)
-  const hasYear = Number.isFinite(stock.yearChange)
-
-  if (!hasMonth && !hasYear) {
+  // Without a full year the -100 fallback would mislabel IPOs as Reversal/Early breakout.
+  if (!Number.isFinite(stock.yearChange)) {
     return {
       score: 0,
       label: 'Neutral',
       tone: 'neutral',
-      detail: 'Recently listed — not enough historical data to compute a trend yet.',
+      detail: RECENTLY_LISTED_DETAIL,
     }
   }
 

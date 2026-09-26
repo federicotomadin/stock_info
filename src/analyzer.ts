@@ -62,6 +62,10 @@ export const passesRiskProfileFilter = (
   if (label === 'Downtrend') {
     return false
   }
+  // Recent listings (<1Y of history) have no confirmed trend and tend to mean-revert right after a pop.
+  if (!Number.isFinite(stock.yearChange)) {
+    return false
+  }
 
   const day = Math.abs(numberOrFallback(stock.dayChange, 0))
   const year = Math.abs(numberOrFallback(stock.yearChange, 0))

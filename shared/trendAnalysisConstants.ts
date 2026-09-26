@@ -1,3 +1,6 @@
+export const RECENTLY_LISTED_DETAIL =
+  'Recently listed — less than one year of trading history, trend not confirmed yet.'
+
 /** Shared trend scoring thresholds — keep server/db/trend.ts and client analyzeTrend in sync. */
 export const TREND_ANALYSIS = {
   missingChangeFallback: -100,

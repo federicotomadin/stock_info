@@ -1,6 +1,9 @@
 import { findCloseAtOrBefore, formatIsoDateFromUnix, toPercent } from './utils.js'
 import { rsi, sma } from './indicators.js'
 
+const TRADING_DAYS_PER_MONTH = 21
+const TRADING_DAYS_PER_YEAR = 252
+
 export function isValidOhlcvCandle(candle) {
   return (
     Number.isFinite(candle.open) &&
@@ -74,14 +77,18 @@ export function buildStockFromSortedDailyCloses(symbol, closes, updatedAtRaw) {
     throw new Error(`Could not parse latest price for ${symbol}.`)
   }
 
-  // Fresh IPOs may have only 1 close. Return what we can and leave % changes as null
-  // — the frontend formatter renders null as 'N/A' instead of crashing.
+  // Fresh IPOs lack a full window: leave that % change as null instead of measuring from the
+  // listing price, otherwise a post-IPO pop reads as a confirmed 1Y uptrend (false Momentum).
   const previousClose =
     latestIndex >= 1 ? findCloseAtOrBefore(closes, latestIndex - 1) : null
   const monthClose =
-    latestIndex >= 1 ? findCloseAtOrBefore(closes, Math.max(latestIndex - 21, 0)) : null
+    latestIndex >= TRADING_DAYS_PER_MONTH
+      ? findCloseAtOrBefore(closes, latestIndex - TRADING_DAYS_PER_MONTH)
+      : null
   const yearClose =
-    latestIndex >= 1 ? findCloseAtOrBefore(closes, Math.max(latestIndex - 252, 0)) : null
+    latestIndex >= TRADING_DAYS_PER_YEAR
+      ? findCloseAtOrBefore(closes, latestIndex - TRADING_DAYS_PER_YEAR)
+      : null
 
   let updatedAt = ''
   if (updatedAtRaw != null) {
