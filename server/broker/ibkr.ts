@@ -13,36 +13,59 @@ import { IBKR_CONFIG } from './config.js'
 import type { BracketProposal } from './proposal.js'
 
 const REQUEST_TIMEOUT_MS = 8000
+const REJECTION_WAIT_MS = 3000
+
+// 399 and 2100+ are informational (e.g. "order held until market open"), not rejections.
+const isOrderRejection = (code: number): boolean => code !== 399 && code < 2100
 const MAX_RECENT_ERRORS = 10
 
 let api: IBApiNext | null = null
 let connectionState = ConnectionState.Disconnected
-const recentErrors: Array<{ at: string; reqId: number | null; code: number; message: string }> = []
+const recentErrors: Array<{
+  at: string
+  reqId: number | null
+  code: number
+  message: string
+  informational: boolean
+}> = []
 
 function getApi(): IBApiNext {
   if (api) return api
 
-  api = new IBApiNext({
+  const client = new IBApiNext({
     host: IBKR_CONFIG.host,
     port: IBKR_CONFIG.port,
     reconnectInterval: 10_000,
   })
-  api.connectionState.subscribe((state) => {
-    connectionState = state
+  api = client
+  client.connectionState.subscribe((state) => {
+    if (client === api) connectionState = state
   })
-  api.error.subscribe((error) => {
+  client.error.subscribe((error) => {
     // Reconnect attempts fail every few seconds while Gateway is closed; status.reason covers that.
-    if (connectionState !== ConnectionState.Connected) return
+    if (client !== api || connectionState !== ConnectionState.Connected) return
     recentErrors.unshift({
       at: new Date().toISOString(),
       reqId: error.reqId >= 0 ? error.reqId : null,
       code: Number(error.code),
-      message: error.error?.message ?? error.message,
+      message: (error.error?.message ?? error.message).replace(/<br>/g, ' '),
+      informational: !isOrderRejection(Number(error.code)),
     })
     recentErrors.length = Math.min(recentErrors.length, MAX_RECENT_ERRORS)
   })
-  api.connect(IBKR_CONFIG.clientId)
-  return api
+  client.connect(IBKR_CONFIG.clientId)
+  return client
+}
+
+/**
+ * @stoqey/ib answers each nextValidId to the oldest pending request, so one unanswered request
+ * (e.g. sent while Gateway was Read-Only) starves every later one. A fresh socket drops the queue.
+ */
+function resetConnection(): void {
+  const stale = api
+  api = null
+  connectionState = ConnectionState.Disconnected
+  stale?.disconnect()
 }
 
 function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
@@ -172,7 +195,13 @@ export async function placeBracketOrder(proposal: BracketProposal) {
   const account = await requireTradableAccount()
   const client = getApi()
   const contract = stockContract(proposal.symbol)
-  const parentId = await withTimeout(client.getNextValidOrderId(), 'order id')
+  const parentId = await withTimeout(client.getNextValidOrderId(), 'order id').catch(() => {
+    resetConnection()
+    throw new Error(
+      'IB no devolvió un número de orden y se reinició la conexión: generá una propuesta nueva. ' +
+        'Si se repite, revisá que "Read-Only API" esté destildado en Configure → Settings → API → Settings.'
+    )
+  })
   const takeProfitId = parentId + 1
   const stopLossId = parentId + 2
   const shared = { account, totalQuantity: proposal.quantity, outsideRth: false }
@@ -207,9 +236,24 @@ export async function placeBracketOrder(proposal: BracketProposal) {
     transmit: true,
   }
 
+  // Subscribe before sending: IB reports rejections asynchronously, right after placeOrder.
+  const orderIds = [parentId, takeProfitId, stopLossId]
+  const rejection = firstValueFrom(
+    client.error.pipe(
+      filter((error) => orderIds.includes(error.reqId) && isOrderRejection(Number(error.code))),
+      timeout(REJECTION_WAIT_MS)
+    )
+  ).catch(() => null)
+
   client.placeOrder(parentId, contract, entry)
   client.placeOrder(takeProfitId, contract, takeProfit)
   client.placeOrder(stopLossId, contract, stopLoss)
+
+  const rejected = await rejection
+  if (rejected) {
+    const reason = (rejected.error?.message ?? rejected.message).replace(/<br>/g, ' ')
+    throw new Error(`IB rechazó la orden: ${reason}`)
+  }
 
   return { account, parentOrderId: parentId, takeProfitOrderId: takeProfitId, stopLossOrderId: stopLossId }
 }

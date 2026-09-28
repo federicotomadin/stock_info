@@ -9,7 +9,7 @@ interface BrokerStatus {
   tradingAllowed?: boolean
   reason?: string | null
   limits?: { maxOrderUsd: number; maxOrdersPerDay: number; confirmedToday: number }
-  recentErrors?: Array<{ at: string; reqId: number | null; message: string }>
+  recentErrors?: Array<{ at: string; reqId: number | null; message: string; informational: boolean }>
 }
 
 interface Proposal {
@@ -114,10 +114,11 @@ export function BrokerOrderPanel({ symbol }: { symbol: string }) {
   const confirm = () =>
     run(async () => {
       if (!proposal) return
+      // The server consumes the proposal on any confirm attempt, so it can't be retried either way.
+      setProposal(null)
       const result = await brokerRequest<PlacedOrder>(`/api/broker/proposals/${proposal.id}/confirm`, {
         method: 'POST',
       })
-      setProposal(null)
       setPlaced(result)
       await refresh()
     })
@@ -242,9 +243,10 @@ export function BrokerOrderPanel({ symbol }: { symbol: string }) {
       {status.recentErrors?.length ? (
         <>
           <h4 className="technical-subheading">Últimos mensajes de IB</h4>
-          <ul className="technical-list technical-list-risk">
+          <ul className="technical-list">
             {status.recentErrors.slice(0, 3).map((item) => (
-              <li key={`${item.at}-${item.reqId}`}>
+              <li key={`${item.at}-${item.reqId}`} className={item.informational ? undefined : 'negative'}>
+                {item.informational ? 'Aviso · ' : 'Error · '}
                 {item.reqId != null ? `#${item.reqId}: ` : ''}
                 {item.message}
               </li>
