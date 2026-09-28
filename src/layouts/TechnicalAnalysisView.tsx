@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiEndpoint } from '../services/servicesAPI.ts'
+import { BrokerOrderPanel } from '../components/BrokerOrderPanel.tsx'
 
 interface TechnicalAnalysisViewProps {
   symbol: string
@@ -358,6 +359,8 @@ export function TechnicalAnalysisView({ symbol, onBackToScreener }: TechnicalAna
               {str(payload.disclaimer)}
             </p>
           </section>
+
+          <BrokerOrderPanel symbol={symbol} />
         </>
       ) : null}
     </div>

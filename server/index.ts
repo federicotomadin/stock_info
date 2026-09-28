@@ -9,6 +9,7 @@ import { initSchema } from './db/schema.js'
 import { getSyncStatus, queryScreener } from './db/queries.js'
 import { getSyncProgress, isSyncRunning, scheduleMarketSync, syncMarketData } from './db/sync.js'
 import { sendWeeklyDigest, subscribeToNewsletter, unsubscribeFromNewsletter } from './newsletter.js'
+import { registerBrokerRoutes } from './broker/routes.js'
 
 import {
   FMP_API_KEY,
@@ -64,6 +65,8 @@ app.get('/', (_req, res) => {
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true })
 })
+
+registerBrokerRoutes(app)
 
 app.get('/api/stocks', async (req, res) => {
   const symbols = parseSymbols(req.query.symbols)

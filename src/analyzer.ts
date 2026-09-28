@@ -1,5 +1,5 @@
 import { numberOrFallback } from './utils'
-import { RECOMMENDATION_GUARDS } from '../shared/trendAnalysisConstants'
+import { isOverextendedEntry } from '../shared/entryGuards'
 import type { EnrichedStock, InvestmentGoalId, RiskProfile, TrendLabel } from './types/stock'
 
 export type PreferredHorizon = 'short' | 'medium' | 'long'
@@ -52,15 +52,6 @@ export const horizonByTrendLabel = (
   return 'Watchlist (avoid entry for now)'
 }
 
-const isOverextendedEntry = (stock: EnrichedStock, label: TrendLabel): boolean => {
-  const { maxRsiForBullishEntry, maxMomentumMonthChange } = RECOMMENDATION_GUARDS
-  const isBullishSetup = label === 'Momentum' || label === 'Early breakout'
-  if (isBullishSetup && Number.isFinite(stock.rsi14) && stock.rsi14! > maxRsiForBullishEntry) {
-    return true
-  }
-  return label === 'Momentum' && numberOrFallback(stock.monthChange, 0) > maxMomentumMonthChange
-}
-
 const cappedPositive = (value: number, cap: number): number => Math.min(Math.max(value, 0), cap)
 
 export const passesRiskProfileFilter = (
@@ -76,7 +67,7 @@ export const passesRiskProfileFilter = (
   if (!Number.isFinite(stock.yearChange)) {
     return false
   }
-  if (isOverextendedEntry(stock, label)) {
+  if (isOverextendedEntry({ label, rsi14: stock.rsi14, monthChange: stock.monthChange })) {
     return false
   }
 

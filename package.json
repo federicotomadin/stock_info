@@ -18,13 +18,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@stoqey/ib": "^1.6.10",
     "concurrently": "^9.2.1",
     "cors": "^2.8.6",
     "dotenv": "^17.4.1",
     "express": "^5.2.1",
     "pg": "^8.22.0",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "rxjs": "^7.8.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

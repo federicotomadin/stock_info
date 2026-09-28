@@ -1,6 +1,6 @@
 # Dispara el envío del Top 20 semanal llamando al endpoint protegido de la API en Render.
 # Requiere dos secrets/variables del repo:
-#   - API_ORIGIN: URL pública de la API (https://tu-api.onrender.com)
+#   - API_ORIGIN: URL pública de la API (https://tu-api.onrender.com). Si no existe, usa VITE_API_ORIGIN.
 #   - NEWSLETTER_CRON_SECRET: debe coincidir con el env var homónimo configurado en Render.
 
 name: Weekly newsletter
@@ -17,9 +17,17 @@ jobs:
     steps:
       - name: Trigger weekly digest
         env:
-          API_ORIGIN: ${{ secrets.API_ORIGIN || vars.API_ORIGIN }}
+          API_ORIGIN: ${{ secrets.API_ORIGIN || vars.API_ORIGIN || secrets.VITE_API_ORIGIN }}
           NEWSLETTER_CRON_SECRET: ${{ secrets.NEWSLETTER_CRON_SECRET }}
         run: |
+          if [ -z "$API_ORIGIN" ]; then
+            echo "::error::Falta el secret API_ORIGIN (URL de la API en Render)."
+            exit 1
+          fi
+          if [ -z "$NEWSLETTER_CRON_SECRET" ]; then
+            echo "::error::Falta el secret NEWSLETTER_CRON_SECRET (debe coincidir con el de Render)."
+            exit 1
+          fi
           curl --fail-with-body -sS -X POST \
             -H "x-cron-secret: $NEWSLETTER_CRON_SECRET" \
             "$API_ORIGIN/api/newsletter/send-weekly"
