@@ -17,6 +17,7 @@ import { fetchWithTimeout, withRetries } from './lib/http.js'
 import { buildStockFromCsv } from './lib/stock.js'
 import { fetchSymbolDataFromFmp } from './providers/fmp.js'
 import { fetchSymbolDataFromYahoo } from './providers/yahoo.js'
+import { fetchMarketCaps } from './providers/nasdaqScreener.js'
 
 const symbolCache = new Map()
 let stooqDisabledUntil = 0
@@ -383,9 +384,11 @@ export async function fetchMarketUniverse({ force = false } = {}) {
     }
   })
 
+  const marketCaps = await fetchMarketCaps()
   const merged = [...nasdaqSymbols, ...otherSymbols]
     .sort((a, b) => a.symbol.localeCompare(b.symbol))
     .filter((item, index, arr) => index === 0 || item.symbol !== arr[index - 1].symbol)
+    .map((item) => ({ ...item, marketCap: marketCaps.get(item.symbol) ?? null }))
 
   marketUniverseCache = {
     data: merged,

@@ -7,6 +7,8 @@ export const RECOMMENDATION_GUARDS = {
   maxRsiForBullishEntry: 75,
   // Momentum with a monthly move above this (%) is a blow-off run, not a sustainable trend.
   maxMomentumMonthChange: 40,
+  // Mid cap and up (USD). Smaller names gap harder and IBKR may block opening trades in them.
+  minMarketCapUsd: 2_000_000_000,
 } as const
 
 /** Shared trend scoring thresholds — keep server/db/trend.ts and client analyzeTrend in sync. */

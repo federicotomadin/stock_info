@@ -38,6 +38,15 @@ describe('passesRiskProfileFilter chase-risk guards', () => {
     expect(passesRiskProfileFilter(stock({ monthChange: 55 }), 'Aggressive')).toBe(false)
   })
 
+  it('drops small caps below the minimum market cap', () => {
+    expect(passesRiskProfileFilter(stock({ marketCap: 1.2e9 }), 'Aggressive')).toBe(false)
+    expect(passesRiskProfileFilter(stock({ marketCap: 2e9 }), 'Aggressive')).toBe(true)
+  })
+
+  it('keeps stocks whose market cap is unknown', () => {
+    expect(passesRiskProfileFilter(stock({ marketCap: null }), 'Moderate')).toBe(true)
+  })
+
   it('keeps Momentum when RSI is unavailable', () => {
     expect(passesRiskProfileFilter(stock({ rsi14: null }), 'Moderate')).toBe(true)
   })

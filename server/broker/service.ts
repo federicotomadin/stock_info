@@ -3,6 +3,7 @@ import { analyzeTrend } from '../db/trend.js'
 import { computeTechnicalSnapshot } from '../lib/indicators.js'
 import { sanitizeOhlcvCandles } from '../lib/stock.js'
 import { fetchSymbolData } from '../marketData.js'
+import { fetchMarketCaps } from '../providers/nasdaqScreener.js'
 import { fetchOhlcv } from '../technicalAnalysis.js'
 import { ORDER_LIMITS } from './config.js'
 import { placeBracketOrder } from './ibkr.js'
@@ -45,6 +46,7 @@ export async function createProposal(symbol: string, budgetUsd: number) {
   const quote = await fetchSymbolData(symbol)
   const trend = analyzeTrend(quote)
   const supports = await fetchSupports(symbol)
+  const marketCaps = await fetchMarketCaps()
 
   const result = buildBracketProposal(
     {
@@ -56,6 +58,7 @@ export async function createProposal(symbol: string, budgetUsd: number) {
       yearChange: quote.yearChange,
       monthChange: quote.monthChange,
       rsi14: quote.rsi14 ?? null,
+      marketCap: marketCaps.get(symbol) ?? null,
     },
     ORDER_LIMITS
   )

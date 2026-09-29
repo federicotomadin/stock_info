@@ -33,11 +33,14 @@ export interface UniverseItem {
   symbol: string
   name: string
   exchange: string
+  /** USD; null when nasdaq.com has no figure for the symbol. */
+  marketCap?: number | null
 }
 
 export interface EnrichedStock extends StockQuote {
   name?: string
   exchange?: string
+  marketCap?: number | null
   trend: TrendAnalysis
   country: string
   recommendationScore?: number

@@ -6,6 +6,7 @@ export interface ScreenerApiRow {
   name: string
   exchange: string
   country: CountryLabel
+  marketCap?: number | null
   price: number
   updatedAt: string
   dayChange: number | null
@@ -74,6 +75,7 @@ export function mapScreenerRow(row: ScreenerApiRow): EnrichedStock {
     name: row.name,
     exchange: row.exchange,
     country: row.country,
+    marketCap: row.marketCap ?? null,
     // Recompute on client so profile picks follow latest Momentum rules even if DB labels are stale.
     trend: analyzeTrend(quote),
   }

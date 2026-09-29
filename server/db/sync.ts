@@ -13,6 +13,7 @@ export interface UniverseItem {
   symbol: string
   name: string
   exchange: string
+  marketCap?: number | null
 }
 
 export interface StockQuote {
@@ -111,6 +112,7 @@ async function runSync(deps: SyncDeps, force: boolean): Promise<void> {
         name: item.name,
         exchange: item.exchange,
         country: detectCountry(item),
+        marketCap: item.marketCap ?? null,
       })
     }
 

@@ -22,6 +22,7 @@ const input = (overrides: Partial<BracketProposalInput> = {}): BracketProposalIn
   yearChange: 25,
   monthChange: 8,
   rsi14: 60,
+  marketCap: 3e12,
   ...overrides,
 })
 
@@ -58,6 +59,8 @@ describe('buildBracketProposal', () => {
     ['downtrend', { trendLabel: 'Downtrend' }],
     ['overbought momentum', { rsi14: 82 }],
     ['blow-off monthly run', { monthChange: 60 }],
+    ['small cap below the minimum', { marketCap: 1.5e9 }],
+    ['unknown market cap', { marketCap: null }],
   ])('rejects %s', (_case, overrides) => {
     expect(buildBracketProposal(input(overrides), limits).ok).toBe(false)
   })

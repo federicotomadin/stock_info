@@ -6,6 +6,11 @@ export interface EntryGuardInput {
   monthChange?: number | null
 }
 
+/** True only when the cap is known and below the minimum; unknown caps are left to the caller. */
+export function isBelowMinMarketCap(marketCap: number | null | undefined): boolean {
+  return Number.isFinite(marketCap) && marketCap! < RECOMMENDATION_GUARDS.minMarketCapUsd
+}
+
 /** True when a bullish setup is already overextended and prone to an immediate pullback. */
 export function isOverextendedEntry({ label, rsi14, monthChange }: EntryGuardInput): boolean {
   const { maxRsiForBullishEntry, maxMomentumMonthChange } = RECOMMENDATION_GUARDS

@@ -33,6 +33,7 @@ export async function initSchema(): Promise<void> {
     ALTER TABLE stock_quotes ADD COLUMN IF NOT EXISTS sma_20 DOUBLE PRECISION;
     ALTER TABLE stock_quotes ADD COLUMN IF NOT EXISTS sma_50 DOUBLE PRECISION;
     ALTER TABLE stock_quotes ADD COLUMN IF NOT EXISTS sma_200 DOUBLE PRECISION;
+    ALTER TABLE tickers ADD COLUMN IF NOT EXISTS market_cap DOUBLE PRECISION;
 
     CREATE TABLE IF NOT EXISTS newsletter_subscribers (
       id SERIAL PRIMARY KEY,

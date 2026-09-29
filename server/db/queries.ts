@@ -118,6 +118,7 @@ export async function queryScreener(raw: ScreenerQuery): Promise<ScreenerResult>
        t.name,
        t.exchange,
        t.country,
+       t.market_cap,
        q.price,
        q.quote_updated_at,
        q.day_change,
@@ -161,6 +162,7 @@ export async function queryScreener(raw: ScreenerQuery): Promise<ScreenerResult>
       name: row.name,
       exchange: row.exchange,
       country: row.country,
+      marketCap: row.market_cap == null ? null : Number(row.market_cap),
       price: Number(row.price),
       updatedAt: row.quote_updated_at
         ? String(row.quote_updated_at).slice(0, 10)
@@ -186,6 +188,7 @@ export interface UpsertTickerInput {
   name: string
   exchange: string
   country: string
+  marketCap: number | null
 }
 
 export interface UpsertQuoteInput {
@@ -206,17 +209,20 @@ export interface UpsertQuoteInput {
 export async function upsertTicker(input: UpsertTickerInput): Promise<void> {
   const pool = getPool()
   await pool.query(
-    `INSERT INTO tickers (symbol, name, exchange, country, updated_at)
-     VALUES ($1, $2, $3, $4, NOW())
+    `INSERT INTO tickers (symbol, name, exchange, country, market_cap, updated_at)
+     VALUES ($1, $2, $3, $4, $5, NOW())
      ON CONFLICT (symbol) DO UPDATE SET
        name = EXCLUDED.name,
        exchange = EXCLUDED.exchange,
        country = EXCLUDED.country,
+       -- Keep the last known cap when today's market-cap download failed.
+       market_cap = COALESCE(EXCLUDED.market_cap, tickers.market_cap),
        updated_at = NOW()
      WHERE tickers.name IS DISTINCT FROM EXCLUDED.name
         OR tickers.exchange IS DISTINCT FROM EXCLUDED.exchange
-        OR tickers.country IS DISTINCT FROM EXCLUDED.country`,
-    [input.symbol, input.name, input.exchange, input.country]
+        OR tickers.country IS DISTINCT FROM EXCLUDED.country
+        OR (EXCLUDED.market_cap IS NOT NULL AND tickers.market_cap IS DISTINCT FROM EXCLUDED.market_cap)`,
+    [input.symbol, input.name, input.exchange, input.country, input.marketCap]
   )
 }
 

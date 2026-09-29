@@ -1,4 +1,4 @@
-import { isOverextendedEntry } from '../../shared/entryGuards.js'
+import { isBelowMinMarketCap, isOverextendedEntry } from '../../shared/entryGuards.js'
 import { RECOMMENDATION_GUARDS } from '../../shared/trendAnalysisConstants.js'
 import type { OrderLimits } from './config.js'
 
@@ -11,6 +11,7 @@ export interface BracketProposalInput {
   yearChange: number | null
   monthChange: number | null
   rsi14: number | null
+  marketCap: number | null
 }
 
 export interface BracketProposal {
@@ -72,6 +73,17 @@ export function buildBracketProposal(
   }
   if (!Number.isFinite(input.yearChange)) {
     return { ok: false, error: 'Cotiza hace menos de un año: sin tendencia confirmada.' }
+  }
+  if (!Number.isFinite(input.marketCap)) {
+    return { ok: false, error: 'No se pudo verificar la capitalización de mercado de la acción.' }
+  }
+  if (isBelowMinMarketCap(input.marketCap)) {
+    const capMillions = Math.round(input.marketCap! / 1e6).toLocaleString('es-AR')
+    const minMillions = (RECOMMENDATION_GUARDS.minMarketCapUsd / 1e6).toLocaleString('es-AR')
+    return {
+      ok: false,
+      error: `Capitalización de US$${capMillions} M, por debajo del mínimo de US$${minMillions} M.`,
+    }
   }
   if (trendLabel === 'Downtrend') {
     return { ok: false, error: 'La acción está en tendencia bajista.' }

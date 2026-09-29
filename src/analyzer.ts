@@ -1,5 +1,5 @@
 import { numberOrFallback } from './utils'
-import { isOverextendedEntry } from '../shared/entryGuards'
+import { isBelowMinMarketCap, isOverextendedEntry } from '../shared/entryGuards'
 import type { EnrichedStock, InvestmentGoalId, RiskProfile, TrendLabel } from './types/stock'
 
 export type PreferredHorizon = 'short' | 'medium' | 'long'
@@ -68,6 +68,9 @@ export const passesRiskProfileFilter = (
     return false
   }
   if (isOverextendedEntry({ label, rsi14: stock.rsi14, monthChange: stock.monthChange })) {
+    return false
+  }
+  if (isBelowMinMarketCap(stock.marketCap)) {
     return false
   }
 
