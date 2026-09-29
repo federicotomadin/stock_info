@@ -1,6 +1,9 @@
+import { isBelowMinMarketCap, isOverextendedEntry } from '../../shared/entryGuards.js'
+import { RECOMMENDATION_GUARDS } from '../../shared/trendAnalysisConstants.js'
 import { queryScreener } from '../db/queries.js'
 import { isDatabaseEnabled } from '../db/pool.js'
 import { fetchTechnicalContext } from '../lib/supports.js'
+import { fetchMarketCaps } from '../providers/nasdaqScreener.js'
 import { ORDER_LIMITS } from '../broker/config.js'
 import { buildBracketProposal, type BracketProposal } from '../broker/proposal.js'
 import { toTickerSymbol } from '../broker/ibkr.js'
@@ -23,6 +26,33 @@ export function rankScore(trendScore: number, trendLabel: string): number {
   return trendScore + (LABEL_BOOST[trendLabel] ?? 0)
 }
 
+export function resolveMarketCap(dbCap: number | null | undefined, nasdaqCap: number | undefined): number | null {
+  if (Number.isFinite(dbCap)) return Number(dbCap)
+  if (Number.isFinite(nasdaqCap)) return Number(nasdaqCap)
+  return null
+}
+
+export interface AgentUniverseRow {
+  symbol: string
+  trendLabel: string
+  marketCap: number | null
+  yearChange: number | null
+  monthChange: number | null
+  rsi14: number | null
+  price: number
+}
+
+/** Cheap filters applied before fetching OHLCV so the shortlist is not all microcaps. */
+export function passesAgentUniverse(row: AgentUniverseRow, held: Set<string>): boolean {
+  if (held.has(toTickerSymbol(row.symbol))) return false
+  if (!isEntryLabel(row.trendLabel)) return false
+  if (!Number.isFinite(row.price) || row.price < ORDER_LIMITS.minPrice) return false
+  if (!Number.isFinite(row.yearChange)) return false
+  if (!Number.isFinite(row.marketCap) || isBelowMinMarketCap(row.marketCap)) return false
+  if (isOverextendedEntry({ label: row.trendLabel, rsi14: row.rsi14, monthChange: row.monthChange })) return false
+  return true
+}
+
 export interface RankedCandidate {
   symbol: string
   name: string
@@ -37,9 +67,20 @@ export async function findEntryCandidates(held: Set<string>): Promise<RankedCand
     throw new Error('El agente necesita DATABASE_URL para leer el screener.')
   }
 
-  const { data } = await queryScreener({ sort: 'trend', dir: 'desc', limit: AGENT_CONFIG.scanLimit })
+  const nasdaqCaps = await fetchMarketCaps()
+  const { data } = await queryScreener({
+    sort: 'trend',
+    dir: 'desc',
+    limit: AGENT_CONFIG.scanLimit,
+    minMarketCap: RECOMMENDATION_GUARDS.minMarketCapUsd,
+  })
+
   const eligible = data
-    .filter((row) => isEntryLabel(row.trendLabel) && !held.has(toTickerSymbol(row.symbol)))
+    .map((row) => ({
+      ...row,
+      marketCap: resolveMarketCap(row.marketCap, nasdaqCaps.get(row.symbol)),
+    }))
+    .filter((row) => passesAgentUniverse(row, held))
     .sort((a, b) => rankScore(b.trendScore, b.trendLabel) - rankScore(a.trendScore, a.trendLabel))
     .slice(0, AGENT_CONFIG.supportFetchLimit)
 

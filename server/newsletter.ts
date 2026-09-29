@@ -1,10 +1,7 @@
+import { sendResendEmail } from './lib/mail.js'
 import crypto from 'node:crypto'
 import { getPool, isDatabaseEnabled } from './db/pool.js'
 import { queryScreener } from './db/queries.js'
-
-const RESEND_API_KEY = process.env.RESEND_API_KEY?.trim()
-const NEWSLETTER_FROM_EMAIL = (process.env.NEWSLETTER_FROM_EMAIL || 'onboarding@resend.dev').trim()
-const RESEND_API_URL = 'https://api.resend.com/emails'
 
 export interface SubscribeResult {
   ok: boolean
@@ -128,28 +125,7 @@ function buildEmailHtml(
 }
 
 async function sendEmail(to: string, html: string): Promise<void> {
-  if (!RESEND_API_KEY) {
-    throw new Error('RESEND_API_KEY is not configured')
-  }
-
-  const response = await fetch(RESEND_API_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${RESEND_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: NEWSLETTER_FROM_EMAIL,
-      to,
-      subject: 'Top 20 de la semana — Stock Screener',
-      html,
-    }),
-  })
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => '')
-    throw new Error(`Resend error ${response.status}: ${body}`)
-  }
+  await sendResendEmail({ to, subject: 'Top 20 de la semana — Stock Screener', html })
 }
 
 export interface SendWeeklyResult {

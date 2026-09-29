@@ -3,7 +3,9 @@ import { parseSymbols } from '../lib/utils.js'
 import { IBKR_CONFIG } from './config.js'
 import { AGENT_CONFIG } from '../agent/config.js'
 import { getAgentSnapshot, runAgentCycle, startAgent, stopAgent } from '../agent/loop.js'
-import { cancelOrder, connectBroker, getBrokerStatus, getOpenOrders, getPositions } from './ibkr.js'
+import { sendDailySessionReport } from '../agent/report.js'
+import { reportSessionDate } from '../agent/marketHours.js'
+import { cancelOrder, connectBroker, getAccountSnapshot, getBrokerStatus, getOpenOrders, getPositions } from './ibkr.js'
 import { BrokerRequestError, confirmProposal, createProposal, getOrderLimits } from './service.js'
 
 const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
@@ -153,6 +155,17 @@ export function registerBrokerRoutes(app: Express): void {
       await runAgentCycle({ ignoreHours: true })
       const broker = await getBrokerStatus()
       res.json(await getAgentSnapshot(broker))
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.post('/api/agent/report', async (_req, res) => {
+    try {
+      const snapshot = await getAccountSnapshot()
+      const mailed = await sendDailySessionReport(reportSessionDate(), snapshot, { force: true })
+      const broker = await getBrokerStatus()
+      res.json({ ...mailed, ...(await getAgentSnapshot(broker)) })
     } catch (error) {
       sendError(res, error)
     }

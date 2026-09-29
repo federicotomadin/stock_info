@@ -42,10 +42,16 @@ interface AgentStatus {
     maxOrdersPerDay: number
     aiVeto: boolean
     allowOutsideHours: boolean
+    dailyProfitUsd: number
+    dailyLossUsd: number
+    reportEmail: string | null
   }
+  day?: { sessionDate: string; pnl: number | null; halt: 'profit' | 'loss' | null }
   decisions?: AgentDecision[]
   trades?: AgentTrade[]
   error?: string
+  sent?: boolean
+  reason?: string
 }
 
 const usd = (value: number | null | undefined): string =>
@@ -145,7 +151,16 @@ export function AgentPanel() {
           Riesgo {config.riskPct}% del equity por trade · máx. US${config.maxOrderUsd} ·{' '}
           {config.maxPositions} posiciones · {limits?.confirmedToday ?? 0}/{config.maxOrdersPerDay} órdenes hoy
           · ciclo cada {Math.round((status.intervalMs ?? 0) / 60000)} min
-          {config.aiVeto ? ' · veto IA' : ''}.
+          {config.aiVeto ? ' · veto IA' : ''}. Meta +US${config.dailyProfitUsd} / stop −US$
+          {config.dailyLossUsd} (deja de comprar; no liquida). Mail a {config.reportEmail ?? 'AGENT_REPORT_EMAIL (faltante)'}.
+        </p>
+      ) : null}
+
+      {status.day ? (
+        <p className={status.day.halt === 'loss' ? 'status warning' : 'status loading'}>
+          P&L sesión {status.day.sessionDate}: {usd(status.day.pnl)}
+          {status.day.halt === 'profit' ? ' · meta diaria alcanzada' : ''}
+          {status.day.halt === 'loss' ? ' · stop diario activo' : ''}
         </p>
       ) : null}
 
@@ -174,9 +189,19 @@ export function AgentPanel() {
         >
           Probar ahora
         </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={busy || !canTrade}
+          onClick={() => void run('/api/agent/report')}
+        >
+          Enviar reporte
+        </button>
       </div>
 
       {error ? <p className="status error">{error}</p> : null}
+      {status.reason && status.sent === false ? <p className="status warning">{status.reason}</p> : null}
+      {status.reason && status.sent ? <p className="status loading">{status.reason}</p> : null}
 
       {lastCycle ? (
         <p className={lastCycle.status === 'error' ? 'status error' : 'status loading'}>

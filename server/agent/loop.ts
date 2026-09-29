@@ -2,6 +2,7 @@ import { ORDER_LIMITS } from '../broker/config.js'
 import {
   getAccountSnapshot,
   getBrokerStatus,
+  getExecutionsSince,
   getOpenOrders,
   getPositions,
   placeBracketOrder,
@@ -12,6 +13,7 @@ import {
 import { getOrderLimits, recordConfirmedOrder } from '../broker/service.js'
 import { sizeProposalByRisk } from '../broker/proposal.js'
 import { AGENT_CONFIG } from './config.js'
+import { evaluateDayHalt, sessionPnl } from './dayPlan.js'
 import {
   countPlacedToday,
   finishAgentRun,
@@ -22,8 +24,10 @@ import {
   startAgentRun,
 } from './journal.js'
 import { manageOpenPositions } from './manage.js'
-import { isUsEquitySession } from './marketHours.js'
+import { isUsEquitySession, nyCalendarDate, reportSessionDate } from './marketHours.js'
+import { sendDailySessionReport } from './report.js'
 import { findEntryCandidates } from './scan.js'
+import { getSessionDay, touchSessionDay, upsertFills } from './session.js'
 import { vetoEntry } from './veto.js'
 
 export interface AgentCycleResult {
@@ -71,7 +75,13 @@ async function maybeEnter(snapshot: AccountSnapshot, held: Set<string>, runId: n
 
   const viable = candidates.filter((candidate) => candidate.proposal)
   if (!viable.length) {
-    await logDecision(runId, 'skip', 'Ningún candidato del screener pasó los filtros de entrada.')
+    await logDecision(
+      runId,
+      'skip',
+      candidates.length
+        ? 'Ningún candidato del screener pasó los filtros de entrada.'
+        : 'No hay mid/large caps (≥ US$2.000 M) con setup de entrada. El ranking crudo está lleno de microcaps.'
+    )
     return 'sin entradas'
   }
 
@@ -150,13 +160,33 @@ export async function runAgentCycle(opts: { ignoreHours?: boolean } = {}): Promi
       await logDecision(runId, 'skip', 'El agente solo opera la cuenta paper (prefijo DU/DF).')
       return finish('skipped', 'Cuenta real: el agente no opera. Usá paper.')
     }
+
+    snapshot = await getAccountSnapshot()
+    const today = nyCalendarDate()
+    await touchSessionDay(today, snapshot.netLiquidation)
+    try {
+      const since = nyCalendarDate(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
+      await upsertFills(await getExecutionsSince(since))
+    } catch {
+      /* executions are optional; the session P&L still works from Net Liquidation */
+    }
+
+    const due = reportSessionDate()
+    const dueSession = await getSessionDay(due)
+    if (!dueSession?.reportSentAt) {
+      try {
+        const mailed = await sendDailySessionReport(due, snapshot)
+        await logDecision(runId, mailed.sent ? 'scan' : 'skip', mailed.reason)
+      } catch (error) {
+        await logDecision(runId, 'error', `Mail diario: ${error instanceof Error ? error.message : 'falló el envío.'}`)
+      }
+    }
+
     if (!opts.ignoreHours && !AGENT_CONFIG.allowOutsideHours && !isUsEquitySession()) {
       const summary = 'Mercado cerrado (NYSE 9:30–16:00 ET). Usá “Probar ahora” para un ciclo de práctica.'
       await logDecision(runId, 'skip', summary)
       return finish('skipped', summary)
     }
-
-    snapshot = await getAccountSnapshot()
     const positions = await getPositions()
     const orders = await getOpenOrders()
     await manageOpenPositions(positions, orders, (kind, detail, symbol) => logDecision(runId, kind, detail, symbol))
@@ -174,6 +204,18 @@ export async function runAgentCycle(opts: { ignoreHours?: boolean } = {}): Promi
     const placedToday = Math.max(getOrderLimits().confirmedToday, await countPlacedToday())
     if (placedToday >= ORDER_LIMITS.maxOrdersPerDay) {
       const summary = `Tope diario de ${ORDER_LIMITS.maxOrdersPerDay} órdenes. Solo se gestionaron stops.`
+      await logDecision(runId, 'skip', summary)
+      return finish('ok', summary)
+    }
+
+    const session = await getSessionDay(today)
+    const pnl = sessionPnl(session?.openNl ?? snapshot.netLiquidation, snapshot.netLiquidation) ?? 0
+    const halt = evaluateDayHalt(pnl, AGENT_CONFIG.dailyProfitUsd, AGENT_CONFIG.dailyLossUsd)
+    if (halt.halt) {
+      const summary =
+        halt.reason === 'profit'
+          ? `Meta diaria +US$${AGENT_CONFIG.dailyProfitUsd} alcanzada (P&L ${halt.pnl.toFixed(2)}). No abre trades nuevos.`
+          : `Stop diario −US$${AGENT_CONFIG.dailyLossUsd} tocado (P&L ${halt.pnl.toFixed(2)}). No abre trades nuevos.`
       await logDecision(runId, 'skip', summary)
       return finish('ok', summary)
     }
@@ -209,7 +251,10 @@ export function stopAgent(): void {
 }
 
 export async function getAgentSnapshot(broker: BrokerStatus) {
-  const [decisions, trades] = await Promise.all([listDecisions(20), listOpenTrades()])
+  const today = nyCalendarDate()
+  const [decisions, trades, session] = await Promise.all([listDecisions(20), listOpenTrades(), getSessionDay(today)])
+  const dayPnl = sessionPnl(session?.openNl ?? null, session?.closeNl ?? null)
+  const halt = evaluateDayHalt(dayPnl ?? 0, AGENT_CONFIG.dailyProfitUsd, AGENT_CONFIG.dailyLossUsd)
   return {
     enabled: AGENT_CONFIG.enabled,
     running: runtime.running,
@@ -219,6 +264,11 @@ export async function getAgentSnapshot(broker: BrokerStatus) {
     lastCycle: runtime.lastCycle,
     broker,
     limits: getOrderLimits(),
+    day: {
+      sessionDate: today,
+      pnl: dayPnl,
+      halt: halt.halt ? halt.reason : null,
+    },
     config: {
       maxPositions: AGENT_CONFIG.maxPositions,
       riskPct: AGENT_CONFIG.riskPct,
@@ -226,6 +276,9 @@ export async function getAgentSnapshot(broker: BrokerStatus) {
       maxOrdersPerDay: ORDER_LIMITS.maxOrdersPerDay,
       aiVeto: AGENT_CONFIG.aiVeto,
       allowOutsideHours: AGENT_CONFIG.allowOutsideHours,
+      dailyProfitUsd: AGENT_CONFIG.dailyProfitUsd,
+      dailyLossUsd: AGENT_CONFIG.dailyLossUsd,
+      reportEmail: AGENT_CONFIG.reportEmail || null,
     },
     decisions,
     trades,

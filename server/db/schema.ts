@@ -111,5 +111,24 @@ export async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_agent_decisions_at ON agent_decisions (at DESC);
     CREATE INDEX IF NOT EXISTS idx_agent_trades_status ON agent_trades (status);
     CREATE INDEX IF NOT EXISTS idx_agent_trades_opened_at ON agent_trades (opened_at DESC);
+
+    CREATE TABLE IF NOT EXISTS agent_session_days (
+      day DATE PRIMARY KEY,
+      open_nl DOUBLE PRECISION,
+      close_nl DOUBLE PRECISION,
+      report_sent_at TIMESTAMPTZ
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_fills (
+      exec_id TEXT PRIMARY KEY,
+      symbol TEXT NOT NULL,
+      side TEXT NOT NULL,
+      quantity DOUBLE PRECISION NOT NULL,
+      price DOUBLE PRECISION NOT NULL,
+      session_date DATE NOT NULL,
+      executed_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_agent_fills_session_date ON agent_fills (session_date);
   `)
 }

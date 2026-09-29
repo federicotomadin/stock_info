@@ -168,7 +168,57 @@ export async function getPositions() {
       quantity: position.pos,
       avgCost: position.avgCost ?? null,
       marketPrice: position.marketPrice ?? null,
+      unrealizedPnl: position.unrealizedPNL ?? null,
     }))
+}
+
+export interface ExecutionFill {
+  execId: string
+  symbol: string
+  side: 'BUY' | 'SELL'
+  quantity: number
+  price: number
+  time: string
+  sessionDate: string
+}
+
+function ibSessionDate(time: string | undefined): string | null {
+  const digits = (time ?? '').replace(/\D/g, '').slice(0, 8)
+  if (digits.length !== 8) return null
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`
+}
+
+export async function getExecutionsSince(isoDate: string): Promise<ExecutionFill[]> {
+  const account = await requireTradableAccount()
+  const details = await withTimeout(
+    getApi().getExecutionDetails({
+      acctCode: account,
+      time: `${isoDate.replaceAll('-', '')} 00:00:00`,
+    }),
+    'ejecuciones'
+  )
+  return details
+    .filter(({ execution }) => !execution.acctNumber || execution.acctNumber === account)
+    .flatMap(({ contract, execution }) => {
+      const execId = execution.execId?.trim()
+      const quantity = Number(execution.shares)
+      const price = Number(execution.price)
+      const sessionDate = ibSessionDate(execution.time)
+      const rawSide = (execution.side ?? '').toUpperCase()
+      const side: ExecutionFill['side'] | null = rawSide === 'BOT' || rawSide === 'BUY' ? 'BUY' : rawSide === 'SLD' || rawSide === 'SELL' ? 'SELL' : null
+      if (!execId || !sessionDate || !side || !(quantity > 0) || !(price > 0)) return []
+      return [
+        {
+          execId,
+          symbol: contract.symbol ?? '',
+          side,
+          quantity,
+          price,
+          time: execution.time ?? sessionDate,
+          sessionDate,
+        },
+      ]
+    })
 }
 
 export async function getOpenOrders() {

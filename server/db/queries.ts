@@ -31,6 +31,7 @@ export interface ScreenerQuery {
   search?: string
   trend?: string
   country?: string
+  minMarketCap?: number
 }
 
 export interface ScreenerResult {
@@ -98,6 +99,13 @@ export async function queryScreener(raw: ScreenerQuery): Promise<ScreenerResult>
   if (country && country !== 'all') {
     conditions.push(`t.country = $${paramIndex}`)
     params.push(country)
+    paramIndex += 1
+  }
+
+  const minMarketCap = Number(raw.minMarketCap)
+  if (Number.isFinite(minMarketCap) && minMarketCap > 0) {
+    conditions.push(`t.market_cap >= $${paramIndex}`)
+    params.push(minMarketCap)
     paramIndex += 1
   }
 
