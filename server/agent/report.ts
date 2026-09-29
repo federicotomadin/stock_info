@@ -1,7 +1,14 @@
 import { sendResendEmail, isMailConfigured } from '../lib/mail.js'
 import { toTickerSymbol, type AccountSnapshot } from '../broker/ibkr.js'
 import { AGENT_CONFIG } from './config.js'
-import { getSessionDay, listFillsForDay, markReportSent, type StoredFill } from './session.js'
+import {
+  clearDailyReportClaim,
+  getSessionDay,
+  listFillsForDay,
+  markReportSent,
+  tryClaimDailyReport,
+  type StoredFill,
+} from './session.js'
 import { nyCalendarDate } from './marketHours.js'
 import { sessionPnl } from './dayPlan.js'
 
@@ -93,11 +100,17 @@ export async function sendDailySessionReport(
   if (!to) return { sent: false, reason: 'Falta AGENT_REPORT_EMAIL en el .env.' }
   if (!isMailConfigured()) return { sent: false, reason: 'Falta RESEND_API_KEY para enviar el mail.' }
 
-  const session = await getSessionDay(day)
-  if (session?.reportSentAt && !opts.force) {
-    return { sent: false, reason: `El reporte del ${day} ya se envió.` }
+  if (!opts.force) {
+    const session = await getSessionDay(day)
+    if (session?.reportSentAt) {
+      return { sent: false, reason: `El reporte del ${day} ya se envió.` }
+    }
+    if (!(await tryClaimDailyReport(day))) {
+      return { sent: false, reason: `El reporte del ${day} ya se envió.` }
+    }
   }
 
+  const session = await getSessionDay(day)
   const fills = await listFillsForDay(day)
   const liveClose = day === nyCalendarDate() ? snapshot?.netLiquidation ?? null : null
   const closeNl = session?.closeNl ?? liveClose
@@ -112,11 +125,16 @@ export async function sendDailySessionReport(
   })
   const pnl = sessionPnl(openNl, closeNl)
   const pnlLabel = pnl == null ? 'sin P&L' : `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} USD`
-  await sendResendEmail({
-    to,
-    subject: `Paper IBKR · ${day} · ${pnlLabel}`,
-    html,
-  })
-  await markReportSent(day)
+  try {
+    await sendResendEmail({
+      to,
+      subject: `Paper IBKR · ${day} · ${pnlLabel}`,
+      html,
+    })
+  } catch (error) {
+    if (!opts.force) await clearDailyReportClaim(day)
+    throw error
+  }
+  if (opts.force) await markReportSent(day)
   return { sent: true, reason: `Mail enviado a ${to} (${day}).` }
 }

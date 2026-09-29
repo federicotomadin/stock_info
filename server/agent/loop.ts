@@ -25,7 +25,7 @@ import {
   startAgentRun,
 } from './journal.js'
 import { manageOpenPositions } from './manage.js'
-import { isUsEquitySession, nyCalendarDate, reportSessionDate } from './marketHours.js'
+import { isAfterNyCashClose, isUsEquitySession, nyCalendarDate } from './marketHours.js'
 import { sendDailySessionReport } from './report.js'
 import { findEntryCandidates } from './scan.js'
 import { getSessionDay, touchSessionDay, upsertFills } from './session.js'
@@ -172,12 +172,15 @@ export async function runAgentCycle(opts: { ignoreHours?: boolean } = {}): Promi
       /* executions are optional; the session P&L still works from Net Liquidation */
     }
 
-    const due = reportSessionDate()
-    const dueSession = await getSessionDay(due)
-    if (!dueSession?.reportSentAt) {
+    // One automatic email per NY session, after the cash close (not every 15 min).
+    if (isAfterNyCashClose()) {
+      const reportDay = nyCalendarDate()
+      await touchSessionDay(reportDay, snapshot.netLiquidation)
       try {
-        const mailed = await sendDailySessionReport(due, snapshot)
-        await logDecision(runId, mailed.sent ? 'scan' : 'skip', mailed.reason)
+        const mailed = await sendDailySessionReport(reportDay, snapshot)
+        if (mailed.sent || !mailed.reason.includes('ya se envió')) {
+          await logDecision(runId, mailed.sent ? 'scan' : 'skip', mailed.reason)
+        }
       } catch (error) {
         await logDecision(runId, 'error', `Mail diario: ${error instanceof Error ? error.message : 'falló el envío.'}`)
       }

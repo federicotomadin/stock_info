@@ -4,7 +4,7 @@ import { IBKR_CONFIG } from './config.js'
 import { AGENT_CONFIG } from '../agent/config.js'
 import { getAgentSnapshot, runAgentCycle, startAgent, stopAgent } from '../agent/loop.js'
 import { sendDailySessionReport } from '../agent/report.js'
-import { reportSessionDate } from '../agent/marketHours.js'
+import { nyCalendarDate } from '../agent/marketHours.js'
 import { cancelOrder, connectBroker, getAccountSnapshot, getBrokerStatus, getOpenOrders, getPositions } from './ibkr.js'
 import { BrokerRequestError, confirmProposal, createProposal, getOrderLimits } from './service.js'
 
@@ -163,7 +163,7 @@ export function registerBrokerRoutes(app: Express): void {
   app.post('/api/agent/report', async (_req, res) => {
     try {
       const snapshot = await getAccountSnapshot()
-      const mailed = await sendDailySessionReport(reportSessionDate(), snapshot, { force: true })
+      const mailed = await sendDailySessionReport(nyCalendarDate(), snapshot, { force: true })
       const broker = await getBrokerStatus()
       res.json({ ...mailed, ...(await getAgentSnapshot(broker)) })
     } catch (error) {

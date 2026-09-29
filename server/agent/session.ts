@@ -71,11 +71,69 @@ export async function getSessionDay(day: string): Promise<SessionDay | null> {
   return memoryDays.get(day) ?? null
 }
 
-export async function markReportSent(day: string): Promise<void> {
-  const current = memoryDays.get(day)
-  if (current) current.reportSentAt = new Date().toISOString()
+async function ensureSessionDayRow(day: string): Promise<void> {
   await tryRun(async () => {
-    await getPool().query(`UPDATE agent_session_days SET report_sent_at = NOW() WHERE day = $1`, [day])
+    await getPool().query(
+      `INSERT INTO agent_session_days (day) VALUES ($1::date) ON CONFLICT (day) DO NOTHING`,
+      [day]
+    )
+  }, undefined)
+}
+
+/** True if this process may send the report (atomic; survives server restarts once committed). */
+export async function tryClaimDailyReport(day: string): Promise<boolean> {
+  const existing = await getSessionDay(day)
+  if (existing?.reportSentAt) return false
+
+  await ensureSessionDayRow(day)
+  const claimed = await tryRun(async () => {
+    const result = await getPool().query(
+      `UPDATE agent_session_days
+       SET report_sent_at = NOW()
+       WHERE day = $1::date AND report_sent_at IS NULL
+       RETURNING day`,
+      [day]
+    )
+    return (result.rowCount ?? 0) > 0
+  }, null as boolean | null)
+
+  if (claimed === true) {
+    const mem = memoryDays.get(day) ?? { day, openNl: null, closeNl: null, reportSentAt: null }
+    mem.reportSentAt = new Date().toISOString()
+    memoryDays.set(day, mem)
+    return true
+  }
+  if (claimed === false) return false
+
+  const mem = memoryDays.get(day)
+  if (mem?.reportSentAt) return false
+  memoryDays.set(day, {
+    day,
+    openNl: mem?.openNl ?? null,
+    closeNl: mem?.closeNl ?? null,
+    reportSentAt: new Date().toISOString(),
+  })
+  return true
+}
+
+export async function clearDailyReportClaim(day: string): Promise<void> {
+  const mem = memoryDays.get(day)
+  if (mem) mem.reportSentAt = null
+  await tryRun(async () => {
+    await getPool().query(`UPDATE agent_session_days SET report_sent_at = NULL WHERE day = $1::date`, [day])
+  }, undefined)
+}
+
+export async function markReportSent(day: string): Promise<void> {
+  const current = memoryDays.get(day) ?? { day, openNl: null, closeNl: null, reportSentAt: null }
+  current.reportSentAt = new Date().toISOString()
+  memoryDays.set(day, current)
+  await ensureSessionDayRow(day)
+  await tryRun(async () => {
+    await getPool().query(
+      `UPDATE agent_session_days SET report_sent_at = COALESCE(report_sent_at, NOW()) WHERE day = $1::date`,
+      [day]
+    )
   }, undefined)
 }
 

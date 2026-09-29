@@ -72,14 +72,17 @@ export function ScreenerWorkspace({
   onOpenFundamentals,
   onOpenTechnical,
 }: ScreenerWorkspaceProps) {
+  const showAgentTab = !import.meta.env.PROD
+  const tab = showAgentTab ? workspaceTab : workspaceTab === 'agent' ? 'screener' : workspaceTab
+
   return (
     <section className="panel workspace-panel">
       <div className="workspace-tabs" role="tablist" aria-label="Workspace tabs">
         <button
           type="button"
           role="tab"
-          aria-selected={workspaceTab === 'screener'}
-          className={`workspace-tab ${workspaceTab === 'screener' ? 'active' : ''}`}
+          aria-selected={tab === 'screener'}
+          className={`workspace-tab ${tab === 'screener' ? 'active' : ''}`}
           onClick={() => onWorkspaceTabChange('screener')}
         >
           Market Results
@@ -87,24 +90,26 @@ export function ScreenerWorkspace({
         <button
           type="button"
           role="tab"
-          aria-selected={workspaceTab === 'profile'}
-          className={`workspace-tab ${workspaceTab === 'profile' ? 'active' : ''}`}
+          aria-selected={tab === 'profile'}
+          className={`workspace-tab ${tab === 'profile' ? 'active' : ''}`}
           onClick={() => onWorkspaceTabChange('profile')}
         >
           Investor Profile
         </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={workspaceTab === 'agent'}
-          className={`workspace-tab ${workspaceTab === 'agent' ? 'active' : ''}`}
-          onClick={() => onWorkspaceTabChange('agent')}
-        >
-          Paper agent
-        </button>
+        {showAgentTab ? (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'agent'}
+            className={`workspace-tab ${tab === 'agent' ? 'active' : ''}`}
+            onClick={() => onWorkspaceTabChange('agent')}
+          >
+            Paper agent
+          </button>
+        ) : null}
       </div>
 
-      {workspaceTab === 'profile' ? (
+      {tab === 'profile' ? (
         <InvestorProfilePanel
           riskTolerance={riskTolerance}
           onRiskToleranceChange={onRiskToleranceChange}
@@ -121,7 +126,7 @@ export function ScreenerWorkspace({
           onOpenFundamentals={onOpenFundamentals}
           onOpenTechnical={onOpenTechnical}
         />
-      ) : workspaceTab === 'agent' ? (
+      ) : tab === 'agent' ? (
         <AgentPanel />
       ) : (
         <ScreenerTable
