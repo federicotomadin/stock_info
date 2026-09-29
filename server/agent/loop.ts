@@ -13,12 +13,13 @@ import {
 import { getOrderLimits, recordConfirmedOrder } from '../broker/service.js'
 import { sizeProposalByRisk } from '../broker/proposal.js'
 import { AGENT_CONFIG } from './config.js'
-import { evaluateDayHalt, sessionPnl } from './dayPlan.js'
+import { evaluateDayHalt, sessionPnl, countLiveEntriesToday } from './dayPlan.js'
 import {
-  countPlacedToday,
+  expireOrphanTrades,
   finishAgentRun,
   listDecisions,
   listOpenTrades,
+  listTradesOpenedOn,
   logDecision,
   recordTrade,
   startAgentRun,
@@ -193,6 +194,12 @@ export async function runAgentCycle(opts: { ignoreHours?: boolean } = {}): Promi
 
     const afterPositions = await getPositions()
     const afterOrders = await getOpenOrders()
+    const held = heldSymbols(afterPositions, afterOrders)
+    const workingBuys = new Set(
+      afterOrders.filter((order) => order.action === 'BUY').map((order) => toTickerSymbol(order.symbol))
+    )
+    await expireOrphanTrades(held, workingBuys)
+
     const longCount = afterPositions.filter((position) => position.quantity > 0).length
 
     if (longCount >= AGENT_CONFIG.maxPositions) {
@@ -201,9 +208,10 @@ export async function runAgentCycle(opts: { ignoreHours?: boolean } = {}): Promi
       return finish('ok', summary)
     }
 
-    const placedToday = Math.max(getOrderLimits().confirmedToday, await countPlacedToday())
+    const submittedToday = (await listTradesOpenedOn(today)).map((trade) => trade.symbol)
+    const placedToday = countLiveEntriesToday(submittedToday, held, workingBuys)
     if (placedToday >= ORDER_LIMITS.maxOrdersPerDay) {
-      const summary = `Tope diario de ${ORDER_LIMITS.maxOrdersPerDay} órdenes. Solo se gestionaron stops.`
+      const summary = `Tope diario de ${ORDER_LIMITS.maxOrdersPerDay} órdenes vivas. Solo se gestionaron stops.`
       await logDecision(runId, 'skip', summary)
       return finish('ok', summary)
     }
@@ -220,7 +228,7 @@ export async function runAgentCycle(opts: { ignoreHours?: boolean } = {}): Promi
       return finish('ok', summary)
     }
 
-    const bought = await maybeEnter(snapshot, heldSymbols(afterPositions, afterOrders), runId)
+    const bought = await maybeEnter(snapshot, held, runId)
     return finish('ok', bought && bought !== 'sin entradas' ? `Compró ${bought} y actualizó stops.` : 'Ciclo ok: se revisaron stops, sin compra nueva.')
   } catch (error) {
     const summary = error instanceof Error ? error.message : 'Error inesperado en el agente.'

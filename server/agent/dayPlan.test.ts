@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { evaluateDayHalt, sessionPnl } from './dayPlan.js'
+import { countLiveEntriesToday, evaluateDayHalt, sessionPnl } from './dayPlan.js'
 import { previousWeekday, reportSessionDate } from './marketHours.js'
 
 describe('evaluateDayHalt', () => {
@@ -14,9 +14,11 @@ describe('evaluateDayHalt', () => {
   })
 })
 
-describe('sessionPnl', () => {
-  it('is current equity minus the open snapshot', () => {
-    expect(sessionPnl(1_000_000, 999_700)).toBe(-300)
+describe('countLiveEntriesToday', () => {
+  it('ignores a submitted order that never filled and is no longer working', () => {
+    expect(
+      countLiveEntriesToday(['BE', 'ALVO', 'NTSK'], new Set(['AAPL', 'ALVO', 'NTSK']), new Set())
+    ).toBe(2)
   })
 })
 

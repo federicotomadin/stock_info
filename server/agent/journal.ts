@@ -212,6 +212,40 @@ export async function updateTradeStop(id: number, stopLoss: number, stopOrderId:
   }
 }
 
+export async function listTradesOpenedOn(isoDate: string): Promise<AgentTrade[]> {
+  const fromDb = await tryQuery(async () => {
+    const result = await getPool().query(
+      `SELECT * FROM agent_trades
+       WHERE (timezone('America/New_York', opened_at))::date = $1::date
+       ORDER BY opened_at ASC`,
+      [isoDate]
+    )
+    return result.rows.map(mapTrade)
+  }, null as AgentTrade[] | null)
+
+  if (fromDb) return fromDb
+  return memoryTrades.filter((trade) => trade.openedAt.slice(0, 10) === isoDate)
+}
+
+export async function expireOrphanTrades(held: Set<string>, workingBuys: Set<string>): Promise<void> {
+  const open = await listOpenTrades()
+  for (const trade of open) {
+    const symbol = trade.symbol.toUpperCase().replace(/\s+/g, '.')
+    if (held.has(symbol) || workingBuys.has(symbol)) continue
+    const memory = memoryTrades.find((row) => row.id === trade.id)
+    if (memory) memory.status = 'expired'
+    if (!isDatabaseEnabled()) continue
+    try {
+      await getPool().query(
+        `UPDATE agent_trades SET status = 'expired', closed_at = NOW(), exit_reason = 'expired' WHERE id = $1`,
+        [trade.id]
+      )
+    } catch {
+      /* journal is best-effort */
+    }
+  }
+}
+
 export async function countPlacedToday(): Promise<number> {
   return tryQuery(async () => {
     const result = await getPool().query(
