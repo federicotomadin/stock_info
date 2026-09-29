@@ -124,3 +124,37 @@ export function buildBracketProposal(
     },
   }
 }
+
+/** Caps quantity by 1% (or configured) equity risk, cash, and the per-order notional cap. */
+export function sizeProposalByRisk(
+  proposal: BracketProposal,
+  opts: { equityUsd: number; cashUsd: number; riskPct: number; maxOrderUsd: number }
+): BracketProposalResult {
+  const perShareRisk = proposal.entryPrice - proposal.stopLoss
+  if (!(perShareRisk > 0)) {
+    return { ok: false, error: 'El stop quedó al mismo precio que la entrada.' }
+  }
+  if (!(opts.equityUsd > 0)) {
+    return { ok: false, error: 'No se pudo leer el equity de la cuenta paper.' }
+  }
+
+  const riskBudget = opts.equityUsd * (opts.riskPct / 100)
+  const byRisk = Math.floor(riskBudget / perShareRisk)
+  const byNotional = Math.floor(opts.maxOrderUsd / proposal.entryPrice)
+  const byCash = Math.floor(Math.max(0, opts.cashUsd) / proposal.entryPrice)
+  const quantity = Math.min(byRisk, byNotional, byCash)
+
+  if (quantity < 1) {
+    return { ok: false, error: 'El presupuesto de riesgo no alcanza para una acción con este stop.' }
+  }
+
+  return {
+    ok: true,
+    proposal: {
+      ...proposal,
+      quantity,
+      notionalUsd: toCents(quantity * proposal.entryPrice),
+      riskUsd: toCents(quantity * perShareRisk),
+    },
+  }
+}

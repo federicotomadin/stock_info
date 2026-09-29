@@ -3,7 +3,7 @@ import { apiEndpoint } from '../services/servicesAPI.ts'
 import type { CompanyProfile, EnrichedStock } from '../types/stock'
 
 interface UseCompanyProfilesParams {
-  workspaceTab: 'screener' | 'profile'
+  workspaceTab: 'screener' | 'profile' | 'agent'
   recommendedStocks: EnrichedStock[]
 }
 

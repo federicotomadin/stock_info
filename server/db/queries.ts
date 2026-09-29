@@ -18,6 +18,7 @@ export interface ScreenerRow {
   sma20: number | null
   sma50: number | null
   sma200: number | null
+  marketCap: number | null
   trendScore: number
   trendLabel: string
 }

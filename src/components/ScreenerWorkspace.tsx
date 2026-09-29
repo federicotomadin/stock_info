@@ -1,5 +1,6 @@
 import { InvestorProfilePanel } from './InvestorProfilePanel'
 import { ScreenerTable } from './ScreenerTable'
+import { AgentPanel } from './AgentPanel'
 import type {
   CompanyProfile,
   CountryLabel,
@@ -12,8 +13,8 @@ import type {
 } from '../types/stock'
 
 interface ScreenerWorkspaceProps {
-  workspaceTab: 'screener' | 'profile'
-  onWorkspaceTabChange: (tab: 'screener' | 'profile') => void
+  workspaceTab: 'screener' | 'profile' | 'agent'
+  onWorkspaceTabChange: (tab: 'screener' | 'profile' | 'agent') => void
 
   riskTolerance: 'low' | 'medium' | 'high'
   onRiskToleranceChange: (value: 'low' | 'medium' | 'high') => void
@@ -92,6 +93,15 @@ export function ScreenerWorkspace({
         >
           Investor Profile
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={workspaceTab === 'agent'}
+          className={`workspace-tab ${workspaceTab === 'agent' ? 'active' : ''}`}
+          onClick={() => onWorkspaceTabChange('agent')}
+        >
+          Paper agent
+        </button>
       </div>
 
       {workspaceTab === 'profile' ? (
@@ -111,6 +121,8 @@ export function ScreenerWorkspace({
           onOpenFundamentals={onOpenFundamentals}
           onOpenTechnical={onOpenTechnical}
         />
+      ) : workspaceTab === 'agent' ? (
+        <AgentPanel />
       ) : (
         <ScreenerTable
           stocks={displayStocks}

@@ -1,10 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { analyzeTrend } from '../db/trend.js'
-import { computeTechnicalSnapshot } from '../lib/indicators.js'
-import { sanitizeOhlcvCandles } from '../lib/stock.js'
+import { fetchTechnicalContext } from '../lib/supports.js'
 import { fetchSymbolData } from '../marketData.js'
 import { fetchMarketCaps } from '../providers/nasdaqScreener.js'
-import { fetchOhlcv } from '../technicalAnalysis.js'
 import { ORDER_LIMITS } from './config.js'
 import { placeBracketOrder } from './ibkr.js'
 import { buildBracketProposal, type BracketProposal } from './proposal.js'
@@ -29,15 +27,9 @@ function pruneExpired(): void {
 
 export class BrokerRequestError extends Error {}
 
-/** Supports only refine the stop; without OHLCV the proposal falls back to the default % stop. */
-async function fetchSupports(symbol: string): Promise<Array<{ level: number }>> {
-  try {
-    const { candles } = await fetchOhlcv(symbol, { lookbackDays: 260 })
-    const { candles: cleanCandles } = sanitizeOhlcvCandles(candles)
-    return cleanCandles.length >= 30 ? computeTechnicalSnapshot(symbol, cleanCandles).supports : []
-  } catch {
-    return []
-  }
+export function recordConfirmedOrder(): void {
+  const key = todayKey()
+  confirmedByDay.set(key, (confirmedByDay.get(key) ?? 0) + 1)
 }
 
 export async function createProposal(symbol: string, budgetUsd: number) {
@@ -45,7 +37,7 @@ export async function createProposal(symbol: string, budgetUsd: number) {
 
   const quote = await fetchSymbolData(symbol)
   const trend = analyzeTrend(quote)
-  const supports = await fetchSupports(symbol)
+  const { supports } = await fetchTechnicalContext(symbol)
   const marketCaps = await fetchMarketCaps()
 
   const result = buildBracketProposal(
@@ -91,7 +83,7 @@ export async function confirmProposal(id: string) {
   // Delete first so a double-click can never send the same bracket twice.
   proposals.delete(id)
   const placed = await placeBracketOrder(proposal)
-  confirmedByDay.set(todayKey(), confirmedToday + 1)
+  recordConfirmedOrder()
   return { proposal, ...placed }
 }
 

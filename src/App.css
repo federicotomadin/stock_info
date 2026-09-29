@@ -1416,3 +1416,24 @@ tbody tr:hover {
   line-height: 1.6;
   color: var(--color-text-muted, #666);
 }
+
+.agent-panel h2 {
+  margin: 0 0 0.35rem;
+}
+
+.agent-panel .subtitle {
+  margin: 0 0 1rem;
+}
+
+.agent-decision-list {
+  max-height: 22rem;
+  overflow: auto;
+}
+
+.agent-decision-kind {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}

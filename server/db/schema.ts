@@ -72,5 +72,44 @@ export async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_tickers_country ON tickers (country);
     CREATE INDEX IF NOT EXISTS idx_tickers_symbol_lower ON tickers (LOWER(symbol));
     CREATE INDEX IF NOT EXISTS idx_tickers_name_lower ON tickers (LOWER(name));
+
+    CREATE TABLE IF NOT EXISTS agent_runs (
+      id SERIAL PRIMARY KEY,
+      started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      finished_at TIMESTAMPTZ,
+      status TEXT NOT NULL DEFAULT 'running',
+      summary TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_decisions (
+      id SERIAL PRIMARY KEY,
+      run_id INT REFERENCES agent_runs(id) ON DELETE SET NULL,
+      at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      kind TEXT NOT NULL,
+      symbol TEXT,
+      detail TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_trades (
+      id SERIAL PRIMARY KEY,
+      symbol TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'placed',
+      quantity INT NOT NULL,
+      entry_price DOUBLE PRECISION NOT NULL,
+      stop_loss DOUBLE PRECISION NOT NULL,
+      take_profit DOUBLE PRECISION NOT NULL,
+      original_stop DOUBLE PRECISION NOT NULL,
+      parent_order_id INT,
+      stop_order_id INT,
+      take_profit_order_id INT,
+      reason TEXT,
+      opened_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      closed_at TIMESTAMPTZ,
+      exit_reason TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_agent_decisions_at ON agent_decisions (at DESC);
+    CREATE INDEX IF NOT EXISTS idx_agent_trades_status ON agent_trades (status);
+    CREATE INDEX IF NOT EXISTS idx_agent_trades_opened_at ON agent_trades (opened_at DESC);
   `)
 }

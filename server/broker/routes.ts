@@ -1,6 +1,8 @@
 import type { Express, NextFunction, Request, Response } from 'express'
 import { parseSymbols } from '../lib/utils.js'
 import { IBKR_CONFIG } from './config.js'
+import { AGENT_CONFIG } from '../agent/config.js'
+import { getAgentSnapshot, runAgentCycle, startAgent, stopAgent } from '../agent/loop.js'
 import { cancelOrder, connectBroker, getBrokerStatus, getOpenOrders, getPositions } from './ibkr.js'
 import { BrokerRequestError, confirmProposal, createProposal, getOrderLimits } from './service.js'
 
@@ -37,6 +39,9 @@ export function registerBrokerRoutes(app: Express): void {
   if (!IBKR_CONFIG.enabled) {
     app.get('/api/broker/status', (_req, res) => {
       res.json({ enabled: false })
+    })
+    app.get('/api/agent/status', (_req, res) => {
+      res.json({ enabled: false, running: false, paperOnly: true })
     })
     return
   }
@@ -98,6 +103,56 @@ export function registerBrokerRoutes(app: Express): void {
     try {
       await cancelOrder(orderId)
       res.json({ ok: true })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.use('/api/agent', localOnly)
+
+  app.get('/api/agent/status', async (_req, res) => {
+    try {
+      const broker = await getBrokerStatus()
+      res.json({ ...(await getAgentSnapshot(broker)), enabled: AGENT_CONFIG.enabled && IBKR_CONFIG.enabled })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.post('/api/agent/start', async (_req, res) => {
+    try {
+      const started = startAgent()
+      if ('error' in started) {
+        res.status(400).json(started)
+        return
+      }
+      await runAgentCycle({ ignoreHours: true })
+      const broker = await getBrokerStatus()
+      res.json(await getAgentSnapshot(broker))
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.post('/api/agent/stop', async (_req, res) => {
+    try {
+      stopAgent()
+      const broker = await getBrokerStatus()
+      res.json(await getAgentSnapshot(broker))
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.post('/api/agent/run', async (_req, res) => {
+    try {
+      if (!AGENT_CONFIG.enabled) {
+        res.status(400).json({ error: 'El agente está apagado. Poné AGENT_ENABLED=true en el .env local.' })
+        return
+      }
+      await runAgentCycle({ ignoreHours: true })
+      const broker = await getBrokerStatus()
+      res.json(await getAgentSnapshot(broker))
     } catch (error) {
       sendError(res, error)
     }

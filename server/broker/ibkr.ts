@@ -12,6 +12,8 @@ import { filter, firstValueFrom, timeout } from 'rxjs'
 import { IBKR_CONFIG } from './config.js'
 import type { BracketProposal } from './proposal.js'
 
+export const toTickerSymbol = (symbol: string): string => symbol.toUpperCase().replace(/\s+/g, '.')
+
 const REQUEST_TIMEOUT_MS = 8000
 const REJECTION_WAIT_MS = 3000
 
@@ -165,6 +167,7 @@ export async function getPositions() {
       symbol: position.contract.symbol,
       quantity: position.pos,
       avgCost: position.avgCost ?? null,
+      marketPrice: position.marketPrice ?? null,
     }))
 }
 
@@ -256,6 +259,113 @@ export async function placeBracketOrder(proposal: BracketProposal) {
   }
 
   return { account, parentOrderId: parentId, takeProfitOrderId: takeProfitId, stopLossOrderId: stopLossId }
+}
+
+export interface AccountSnapshot {
+  account: string
+  netLiquidation: number | null
+  cash: number | null
+}
+
+function readSummaryTag(
+  tags: Map<string, Map<string, { value: string }>> | undefined,
+  name: string
+): number | null {
+  const byCurrency = tags?.get(name)
+  if (!byCurrency) return null
+  const preferred = byCurrency.get('USD') ?? byCurrency.get('BASE')
+  if (preferred) {
+    const parsed = Number(preferred.value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  for (const item of byCurrency.values()) {
+    const parsed = Number(item.value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return null
+}
+
+export async function getAccountSnapshot(): Promise<AccountSnapshot> {
+  const account = await requireTradableAccount()
+  const update = await withTimeout(
+    firstValueFrom(getApi().getAccountSummary('All', 'NetLiquidation,TotalCashValue,AvailableFunds')),
+    'resumen de cuenta'
+  )
+  const tags = update.all.get(account) as unknown as Map<string, Map<string, { value: string }>> | undefined
+  return {
+    account,
+    netLiquidation: readSummaryTag(tags, 'NetLiquidation'),
+    cash: readSummaryTag(tags, 'AvailableFunds') ?? readSummaryTag(tags, 'TotalCashValue'),
+  }
+}
+
+async function waitForOrderRejection(orderIds: number[]): Promise<string | null> {
+  const rejected = await firstValueFrom(
+    getApi().error.pipe(
+      filter((error) => orderIds.includes(error.reqId) && isOrderRejection(Number(error.code))),
+      timeout(REJECTION_WAIT_MS)
+    )
+  ).catch(() => null)
+  if (!rejected) return null
+  return (rejected.error?.message ?? rejected.message).replace(/<br>/g, ' ')
+}
+
+/** Re-sends the same stop id with a higher trigger; IB treats this as a modify. */
+export async function modifyStopOrder(params: {
+  orderId: number
+  parentId: number | null
+  symbol: string
+  quantity: number
+  stopPrice: number
+}): Promise<void> {
+  const account = await requireTradableAccount()
+  const stop = {
+    account,
+    orderId: params.orderId,
+    parentId: params.parentId ?? undefined,
+    action: OrderAction.SELL,
+    orderType: OrderType.STP,
+    totalQuantity: params.quantity,
+    auxPrice: params.stopPrice,
+    tif: TimeInForce.GTC,
+    transmit: true,
+    outsideRth: false,
+  }
+  getApi().placeOrder(params.orderId, stockContract(params.symbol), stop)
+  const reason = await waitForOrderRejection([params.orderId])
+  if (reason) throw new Error(`IB rechazó el stop: ${reason}`)
+}
+
+/** Protective stop for a fill that no longer has a child STP (or was opened by hand). */
+export async function placeProtectiveStop(params: {
+  symbol: string
+  quantity: number
+  stopPrice: number
+}): Promise<number> {
+  const account = await requireTradableAccount()
+  const client = getApi()
+  const orderId = await withTimeout(client.getNextValidOrderId(), 'order id').catch(() => {
+    resetConnection()
+    throw new Error(
+      'IB no devolvió un número de orden y se reinició la conexión. ' +
+        'Si se repite, revisá que "Read-Only API" esté destildado en Configure → Settings → API → Settings.'
+    )
+  })
+  const stop = {
+    account,
+    orderId,
+    action: OrderAction.SELL,
+    orderType: OrderType.STP,
+    totalQuantity: params.quantity,
+    auxPrice: params.stopPrice,
+    tif: TimeInForce.GTC,
+    transmit: true,
+    outsideRth: false,
+  }
+  client.placeOrder(orderId, stockContract(params.symbol), stop)
+  const reason = await waitForOrderRejection([orderId])
+  if (reason) throw new Error(`IB rechazó el stop: ${reason}`)
+  return orderId
 }
 
 /** Cancelling the parent entry also cancels its take-profit and stop-loss children. */

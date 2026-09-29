@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { OrderLimits } from './config.js'
-import { buildBracketProposal, type BracketProposalInput } from './proposal.js'
+import { buildBracketProposal, sizeProposalByRisk, type BracketProposalInput } from './proposal.js'
 
 const limits: OrderLimits = {
   maxOrderUsd: 1000,
@@ -63,5 +63,30 @@ describe('buildBracketProposal', () => {
     ['unknown market cap', { marketCap: null }],
   ])('rejects %s', (_case, overrides) => {
     expect(buildBracketProposal(input(overrides), limits).ok).toBe(false)
+  })
+})
+
+describe('sizeProposalByRisk', () => {
+  it('sizes shares from equity risk, then caps by notional and cash', () => {
+    const built = buildBracketProposal(input(), limits)
+    if (!built.ok) throw new Error('expected a proposal')
+
+    const sized = sizeProposalByRisk(built.proposal, {
+      equityUsd: 100_000,
+      cashUsd: 50_000,
+      riskPct: 1,
+      maxOrderUsd: 1000,
+    })
+
+    expect(sized).toMatchObject({ ok: true, proposal: { quantity: 10, notionalUsd: 1000, riskUsd: 50 } })
+  })
+
+  it('rejects when cash cannot buy one share', () => {
+    const built = buildBracketProposal(input(), limits)
+    if (!built.ok) throw new Error('expected a proposal')
+
+    expect(
+      sizeProposalByRisk(built.proposal, { equityUsd: 100_000, cashUsd: 50, riskPct: 1, maxOrderUsd: 1000 }).ok
+    ).toBe(false)
   })
 })

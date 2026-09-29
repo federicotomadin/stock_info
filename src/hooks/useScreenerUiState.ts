@@ -34,7 +34,7 @@ export function useScreenerUiState() {
   >('intermediate')
   const [investmentHorizon, setInvestmentHorizon] = useState<'short' | 'medium' | 'long'>('medium')
   const [investmentGoals, setInvestmentGoals] = useState<InvestmentGoalId[]>(['growth'])
-  const [workspaceTab, setWorkspaceTab] = useState<'screener' | 'profile'>('screener')
+  const [workspaceTab, setWorkspaceTab] = useState<'screener' | 'profile' | 'agent'>('screener')
 
   return {
     symbolsInput,
