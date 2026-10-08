@@ -1,4 +1,4 @@
-import { ORDER_LIMITS } from '../broker/config.js'
+import { IBKR_CONFIG, ORDER_LIMITS } from '../broker/config.js'
 import {
   getAccountSnapshot,
   getBrokerStatus,
@@ -12,8 +12,9 @@ import {
 } from '../broker/ibkr.js'
 import { getOrderLimits, recordConfirmedOrder } from '../broker/service.js'
 import { sizeProposalByRisk } from '../broker/proposal.js'
+import { fetchSymbolData } from '../marketData.js'
 import { AGENT_CONFIG } from './config.js'
-import { evaluateDayHalt, sessionPnl, countLiveEntriesToday } from './dayPlan.js'
+import { evaluateDayHalt, evaluateWeekHalt, sessionPnl, countLiveEntriesToday, computeWeeklyPnl } from './dayPlan.js'
 import {
   expireOrphanTrades,
   finishAgentRun,
@@ -25,7 +26,7 @@ import {
   startAgentRun,
 } from './journal.js'
 import { manageOpenPositions } from './manage.js'
-import { isAfterNyCashClose, isUsEquitySession, nyCalendarDate } from './marketHours.js'
+import { isAfterNyCashClose, isUsEquitySession, nyCalendarDate, nyWeekStart } from './marketHours.js'
 import { sendDailySessionReport } from './report.js'
 import { findEntryCandidates } from './scan.js'
 import { getSessionDay, touchSessionDay, upsertFills } from './session.js'
@@ -52,11 +53,25 @@ const runtime: AgentRuntime = {
   lastCycle: null,
 }
 
+function positionMarketValue(position: {
+  quantity: number
+  avgCost: number | null
+  marketPrice: number | null
+}): number {
+  const px = position.marketPrice ?? position.avgCost ?? 0
+  return position.quantity > 0 && px > 0 ? position.quantity * px : 0
+}
+
 function heldSymbols(
-  positions: Array<{ symbol: string }>,
+  positions: Array<{ symbol: string; quantity: number; avgCost: number | null; marketPrice: number | null }>,
   orders: Array<{ symbol: string; action: string }>
 ): Set<string> {
-  const held = new Set(positions.map((position) => toTickerSymbol(position.symbol)))
+  const dustMin = AGENT_CONFIG.dustPositionUsd
+  const held = new Set(
+    positions
+      .filter((position) => positionMarketValue(position) >= dustMin)
+      .map((position) => toTickerSymbol(position.symbol))
+  )
   for (const order of orders) {
     if (order.action === 'BUY') held.add(toTickerSymbol(order.symbol))
   }
@@ -86,8 +101,26 @@ async function maybeEnter(snapshot: AccountSnapshot, held: Set<string>, runId: n
     return 'sin entradas'
   }
 
-  for (const candidate of viable.slice(0, 3)) {
-    const proposal = candidate.proposal!
+  for (const candidate of viable.slice(0, 8)) {
+    let proposal = candidate.proposal!
+    try {
+      const quote = await fetchSymbolData(candidate.symbol)
+      if (Number.isFinite(quote.price) && quote.price > 0 && proposal.entryPrice > 0) {
+        const scale = quote.price / proposal.entryPrice
+        if (scale > 0.85 && scale < 1.15) {
+          const round = (n: number) => Math.round(n * 100) / 100
+          proposal = {
+            ...proposal,
+            entryPrice: round(quote.price),
+            stopLoss: round(proposal.stopLoss * scale),
+            takeProfit: round(proposal.takeProfit * scale),
+          }
+        }
+      }
+    } catch {
+      /* keep screener prices */
+    }
+
     const sized = sizeProposalByRisk(proposal, {
       equityUsd: snapshot.netLiquidation ?? 0,
       cashUsd: snapshot.cash ?? ORDER_LIMITS.maxOrderUsd,
@@ -108,26 +141,32 @@ async function maybeEnter(snapshot: AccountSnapshot, held: Set<string>, runId: n
       await logDecision(runId, 'scan', veto.reason, candidate.symbol)
     }
 
-    const placed = await placeBracketOrder(sized.proposal)
-    recordConfirmedOrder()
-    await recordTrade({
-      symbol: sized.proposal.symbol,
-      quantity: sized.proposal.quantity,
-      entryPrice: sized.proposal.entryPrice,
-      stopLoss: sized.proposal.stopLoss,
-      takeProfit: sized.proposal.takeProfit,
-      parentOrderId: placed.parentOrderId,
-      stopOrderId: placed.stopLossOrderId,
-      takeProfitOrderId: placed.takeProfitOrderId,
-      reason: `${candidate.trendLabel} · ${veto.reason}`,
-    })
-    await logDecision(
-      runId,
-      'buy',
-      `${sized.proposal.quantity} × ${sized.proposal.entryPrice} · stop ${sized.proposal.stopLoss} · TP ${sized.proposal.takeProfit}`,
-      candidate.symbol
-    )
-    return candidate.symbol
+    try {
+      const placed = await placeBracketOrder(sized.proposal)
+      recordConfirmedOrder()
+      await recordTrade({
+        symbol: sized.proposal.symbol,
+        quantity: sized.proposal.quantity,
+        entryPrice: sized.proposal.entryPrice,
+        stopLoss: sized.proposal.stopLoss,
+        takeProfit: sized.proposal.takeProfit,
+        parentOrderId: placed.parentOrderId,
+        stopOrderId: placed.stopLossOrderId,
+        takeProfitOrderId: placed.takeProfitOrderId,
+        reason: `${candidate.trendLabel} · ${veto.reason}`,
+      })
+      await logDecision(
+        runId,
+        'buy',
+        `${sized.proposal.quantity} × ${sized.proposal.entryPrice} · stop ${sized.proposal.stopLoss} · TP ${sized.proposal.takeProfit}`,
+        candidate.symbol
+      )
+      return candidate.symbol
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'IB rechazó la orden.'
+      await logDecision(runId, 'reject', message, candidate.symbol)
+      continue
+    }
   }
 
   await logDecision(runId, 'skip', 'Los candidatos viables fueron vetados o no se pudieron dimensionar.')
@@ -157,9 +196,18 @@ export async function runAgentCycle(opts: { ignoreHours?: boolean } = {}): Promi
       await logDecision(runId, 'skip', broker.reason ?? 'IB Gateway no está conectado.')
       return finish('skipped', broker.reason ?? 'Sin conexión a IB.')
     }
-    if (!broker.paper) {
-      await logDecision(runId, 'skip', 'El agente solo opera la cuenta paper (prefijo DU/DF).')
-      return finish('skipped', 'Cuenta real: el agente no opera. Usá paper.')
+    const liveAgentOk = IBKR_CONFIG.allowLive && AGENT_CONFIG.allowLive
+    if (!broker.paper && !liveAgentOk) {
+      await logDecision(
+        runId,
+        'skip',
+        'Cuenta real: activá IBKR_ALLOW_LIVE=true y AGENT_ALLOW_LIVE=true en .env (solo local).'
+      )
+      return finish('skipped', 'Cuenta real bloqueada para el agente.')
+    }
+    if (!broker.paper && !broker.tradingAllowed) {
+      await logDecision(runId, 'skip', broker.reason ?? 'Cuenta real no habilitada para operar.')
+      return finish('skipped', broker.reason ?? 'Sin permiso para operar en real.')
     }
 
     snapshot = await getAccountSnapshot()
@@ -201,12 +249,13 @@ export async function runAgentCycle(opts: { ignoreHours?: boolean } = {}): Promi
     const workingBuys = new Set(
       afterOrders.filter((order) => order.action === 'BUY').map((order) => toTickerSymbol(order.symbol))
     )
-    await expireOrphanTrades(held, workingBuys)
+    await expireOrphanTrades(held, workingBuys, afterOrders)
 
-    const longCount = afterPositions.filter((position) => position.quantity > 0).length
+    const agentOpenTrades = await listOpenTrades()
+    const agentSlotCount = agentOpenTrades.length
 
-    if (longCount >= AGENT_CONFIG.maxPositions) {
-      const summary = `Máximo de ${AGENT_CONFIG.maxPositions} posiciones. Solo se gestionaron stops.`
+    if (agentSlotCount >= AGENT_CONFIG.maxPositions) {
+      const summary = `Máximo de ${AGENT_CONFIG.maxPositions} trades abiertos del agente. Solo se gestionaron stops.`
       await logDecision(runId, 'skip', summary)
       return finish('ok', summary)
     }
@@ -227,6 +276,17 @@ export async function runAgentCycle(opts: { ignoreHours?: boolean } = {}): Promi
         halt.reason === 'profit'
           ? `Meta diaria +US$${AGENT_CONFIG.dailyProfitUsd} alcanzada (P&L ${halt.pnl.toFixed(2)}). No abre trades nuevos.`
           : `Stop diario −US$${AGENT_CONFIG.dailyLossUsd} tocado (P&L ${halt.pnl.toFixed(2)}). No abre trades nuevos.`
+      await logDecision(runId, 'skip', summary)
+      return finish('ok', summary)
+    }
+
+    const weekPnl = (await computeWeeklyPnl(today, snapshot.netLiquidation)) ?? 0
+    const weekHalt = evaluateWeekHalt(weekPnl, AGENT_CONFIG.weeklyProfitUsd, AGENT_CONFIG.weeklyLossUsd)
+    if (weekHalt.halt) {
+      const summary =
+        weekHalt.reason === 'profit'
+          ? `Meta semanal +US$${AGENT_CONFIG.weeklyProfitUsd} alcanzada (P&L sem. ${weekHalt.pnl.toFixed(2)}). No abre trades nuevos.`
+          : `Stop semanal −US$${AGENT_CONFIG.weeklyLossUsd} tocado (P&L sem. ${weekHalt.pnl.toFixed(2)}). No abre trades nuevos.`
       await logDecision(runId, 'skip', summary)
       return finish('ok', summary)
     }
@@ -264,13 +324,24 @@ export function stopAgent(): void {
 export async function getAgentSnapshot(broker: BrokerStatus) {
   const today = nyCalendarDate()
   const [decisions, trades, session] = await Promise.all([listDecisions(20), listOpenTrades(), getSessionDay(today)])
-  const dayPnl = sessionPnl(session?.openNl ?? null, session?.closeNl ?? null)
+  let liveNl: number | null = null
+  if (broker.connected) {
+    try {
+      liveNl = (await getAccountSnapshot()).netLiquidation
+    } catch {
+      liveNl = null
+    }
+  }
+  const dayPnl = sessionPnl(session?.openNl ?? null, liveNl ?? session?.closeNl ?? null)
   const halt = evaluateDayHalt(dayPnl ?? 0, AGENT_CONFIG.dailyProfitUsd, AGENT_CONFIG.dailyLossUsd)
+  const weekPnl = await computeWeeklyPnl(today, liveNl)
+  const weekHalt = evaluateWeekHalt(weekPnl ?? 0, AGENT_CONFIG.weeklyProfitUsd, AGENT_CONFIG.weeklyLossUsd)
+  const liveAgentEnabled = IBKR_CONFIG.allowLive && AGENT_CONFIG.allowLive
   return {
     enabled: AGENT_CONFIG.enabled,
     running: runtime.running,
     busy: runtime.busy,
-    paperOnly: true as const,
+    paperOnly: !liveAgentEnabled,
     intervalMs: AGENT_CONFIG.intervalMs,
     lastCycle: runtime.lastCycle,
     broker,
@@ -279,6 +350,11 @@ export async function getAgentSnapshot(broker: BrokerStatus) {
       sessionDate: today,
       pnl: dayPnl,
       halt: halt.halt ? halt.reason : null,
+    },
+    week: {
+      weekStart: nyWeekStart(today),
+      pnl: weekPnl,
+      halt: weekHalt.halt ? weekHalt.reason : null,
     },
     config: {
       maxPositions: AGENT_CONFIG.maxPositions,
@@ -289,7 +365,10 @@ export async function getAgentSnapshot(broker: BrokerStatus) {
       allowOutsideHours: AGENT_CONFIG.allowOutsideHours,
       dailyProfitUsd: AGENT_CONFIG.dailyProfitUsd,
       dailyLossUsd: AGENT_CONFIG.dailyLossUsd,
+      weeklyProfitUsd: AGENT_CONFIG.weeklyProfitUsd,
+      weeklyLossUsd: AGENT_CONFIG.weeklyLossUsd,
       reportEmail: AGENT_CONFIG.reportEmail || null,
+      allowLive: liveAgentEnabled,
     },
     decisions,
     trades,

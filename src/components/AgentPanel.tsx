@@ -44,9 +44,13 @@ interface AgentStatus {
     allowOutsideHours: boolean
     dailyProfitUsd: number
     dailyLossUsd: number
+    weeklyProfitUsd: number
+    weeklyLossUsd: number
     reportEmail: string | null
+    allowLive?: boolean
   }
   day?: { sessionDate: string; pnl: number | null; halt: 'profit' | 'loss' | null }
+  week?: { weekStart: string; pnl: number | null; halt: 'profit' | 'loss' | null }
   decisions?: AgentDecision[]
   trades?: AgentTrade[]
   error?: string
@@ -80,7 +84,7 @@ function kindLabel(kind: string): string {
   return 'Scan'
 }
 
-/** Paper-only IBKR loop: pick screener names, send brackets, trail stops. */
+/** IBKR agent loop: screener entries, brackets, trailing stops (paper by default; live with env flags). */
 export function AgentPanel() {
   const [status, setStatus] = useState<AgentStatus | null>(null)
   const [busy, setBusy] = useState(false)
@@ -113,31 +117,38 @@ export function AgentPanel() {
   }
 
   if (!status) {
-    return <p className="status loading">Consultando el agente paper…</p>
+    return <p className="status loading">Consultando el agente IBKR…</p>
   }
 
   if (!status.enabled) {
     return (
       <div className="agent-panel">
-        <h2>Agente paper IBKR</h2>
+        <h2>Agente IBKR</h2>
         <p className="subtitle">
-          Para activarlo en esta máquina: IB Gateway abierto en paper, <code>IBKR_ENABLED=true</code> y{' '}
-          <code>AGENT_ENABLED=true</code> en el <code>.env</code> local. Nunca lo habilites en Render.
+          Para activarlo en esta máquina: IB Gateway abierto (paper 4002 o live 4001),{' '}
+          <code>IBKR_ENABLED=true</code> y <code>AGENT_ENABLED=true</code> en el <code>.env</code> local. En cuenta
+          real también <code>IBKR_ALLOW_LIVE=true</code> y <code>AGENT_ALLOW_LIVE=true</code>. Nunca en Render.
         </p>
       </div>
     )
   }
 
   const { broker, config, limits, lastCycle } = status
-  const canTrade = Boolean(broker?.paper && broker.tradingAllowed)
+  const isPaper = Boolean(broker?.paper)
+  const canTrade = Boolean(
+    broker?.tradingAllowed && (broker?.paper || config?.allowLive)
+  )
 
   return (
     <div className="agent-panel">
-      <h2>Agente paper IBKR</h2>
+      <h2>{isPaper ? 'Agente IBKR (paper)' : 'Agente IBKR (cuenta real)'}</h2>
       <p className="subtitle">
         Elige nombres del screener (breakout, pullback, reversal, momentum), manda un bracket con stop y
-        take-profit, y sube el stop a break-even / trailing. Solo cuenta paper. Las reglas ponen precio y
-        tamaño; la IA como mucho veta.
+        take-profit, y sube el stop a break-even / trailing. Las reglas fijan precio y tamaño; la IA solo veta
+        entradas.
+        {isPaper
+          ? ' Modo paper (DU/DF): sin dinero real.'
+          : ' Modo real: cada orden usa tu saldo en IBKR.'}
       </p>
 
       <p className={broker?.paper ? 'status loading' : 'status warning'}>
@@ -146,13 +157,30 @@ export function AgentPanel() {
         {broker?.reason ? ` · ${broker.reason}` : ''}
       </p>
 
+      {!isPaper ? (
+        <p className="status warning">
+          Metas día +US${config?.dailyProfitUsd ?? '—'} / −US${config?.dailyLossUsd ?? '—'} y semana +US$
+          {config?.weeklyProfitUsd ?? '—'} / −US${config?.weeklyLossUsd ?? '—'}: solo frenan nuevas compras; no
+          cierran posiciones ni garantizan ganancias.
+        </p>
+      ) : null}
+
+      {!canTrade && broker?.connected ? (
+        <p className="status warning">
+          {isPaper
+            ? 'Operación bloqueada: revisá permisos de API en Gateway (Read-Only desactivado).'
+            : 'Operación bloqueada: faltan IBKR_ALLOW_LIVE y AGENT_ALLOW_LIVE en .env, o la API está en solo lectura.'}
+        </p>
+      ) : null}
+
       {config ? (
         <p className="fundamentals-footnote">
           Riesgo {config.riskPct}% del equity por trade · máx. US${config.maxOrderUsd} ·{' '}
           {config.maxPositions} posiciones · {limits?.confirmedToday ?? 0}/{config.maxOrdersPerDay} órdenes hoy
           · ciclo cada {Math.round((status.intervalMs ?? 0) / 60000)} min
-          {config.aiVeto ? ' · veto IA' : ''}. Meta +US${config.dailyProfitUsd} / stop −US$
-          {config.dailyLossUsd} (deja de comprar; no liquida). Mail a {config.reportEmail ?? 'AGENT_REPORT_EMAIL (faltante)'}.
+          {config.aiVeto ? ' · veto IA' : ''}. Meta día +US${config.dailyProfitUsd} / −US$
+          {config.dailyLossUsd} · semana +US${config.weeklyProfitUsd} / −US${config.weeklyLossUsd} (deja de
+          comprar; no liquida). Mail a {config.reportEmail ?? 'AGENT_REPORT_EMAIL (faltante)'}.
         </p>
       ) : null}
 
@@ -161,6 +189,14 @@ export function AgentPanel() {
           P&L sesión {status.day.sessionDate}: {usd(status.day.pnl)}
           {status.day.halt === 'profit' ? ' · meta diaria alcanzada' : ''}
           {status.day.halt === 'loss' ? ' · stop diario activo' : ''}
+        </p>
+      ) : null}
+
+      {status.week ? (
+        <p className={status.week.halt === 'loss' ? 'status warning' : 'status loading'}>
+          P&L semana (desde {status.week.weekStart} NY): {usd(status.week.pnl)}
+          {status.week.halt === 'profit' ? ' · meta semanal alcanzada' : ''}
+          {status.week.halt === 'loss' ? ' · stop semanal activo' : ''}
         </p>
       ) : null}
 

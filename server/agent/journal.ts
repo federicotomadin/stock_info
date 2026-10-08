@@ -227,11 +227,33 @@ export async function listTradesOpenedOn(isoDate: string): Promise<AgentTrade[]>
   return memoryTrades.filter((trade) => trade.openedAt.slice(0, 10) === isoDate)
 }
 
-export async function expireOrphanTrades(held: Set<string>, workingBuys: Set<string>): Promise<void> {
+const ORPHAN_TRADE_MIN_AGE_MS = 5 * 60 * 1000
+
+interface OpenOrderLike {
+  symbol: string
+  action: string
+}
+
+/** Drop journal rows when IB shows no position, no working buy, and no live bracket sells. */
+export async function expireOrphanTrades(
+  held: Set<string>,
+  workingBuys: Set<string>,
+  orders: OpenOrderLike[] = []
+): Promise<void> {
   const open = await listOpenTrades()
+  const now = Date.now()
   for (const trade of open) {
     const symbol = trade.symbol.toUpperCase().replace(/\s+/g, '.')
     if (held.has(symbol) || workingBuys.has(symbol)) continue
+
+    const hasWorkingSells = orders.some(
+      (order) =>
+        order.action.toUpperCase() === 'SELL' &&
+        order.symbol.toUpperCase().replace(/\s+/g, '.') === symbol
+    )
+    if (hasWorkingSells) continue
+
+    if (now - new Date(trade.openedAt).getTime() < ORPHAN_TRADE_MIN_AGE_MS) continue
     const memory = memoryTrades.find((row) => row.id === trade.id)
     if (memory) memory.status = 'expired'
     if (!isDatabaseEnabled()) continue

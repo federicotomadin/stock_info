@@ -74,3 +74,21 @@ export function reportSessionDate(now = new Date()): string {
   return today
 }
 
+const NY_WEEKDAY_OFFSET: Record<string, number> = {
+  Mon: 0,
+  Tue: 1,
+  Wed: 2,
+  Thu: 3,
+  Fri: 4,
+  Sat: 5,
+  Sun: 6,
+}
+
+/** Monday (NY calendar) of the week that contains `isoDate`. */
+export function nyWeekStart(isoDate: string): string {
+  const [year, month, day] = isoDate.split('-').map(Number)
+  const weekday = nyParts(new Date(Date.UTC(year, month - 1, day, 17, 0))).weekday ?? 'Mon'
+  const back = NY_WEEKDAY_OFFSET[weekday] ?? 0
+  return shiftIsoDate(isoDate, -back)
+}
+

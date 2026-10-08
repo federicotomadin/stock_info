@@ -189,3 +189,26 @@ export async function listFillsForDay(day: string): Promise<StoredFill[]> {
   if (fromDb) return fromDb
   return [...memoryFills.values()].filter((fill) => fill.sessionDate === day)
 }
+
+export async function listSessionDaysBetween(startDay: string, endDay: string): Promise<SessionDay[]> {
+  const fromDb = await tryRun(async () => {
+    const result = await getPool().query(
+      `SELECT day::text AS day, open_nl, close_nl, report_sent_at
+       FROM agent_session_days
+       WHERE day >= $1::date AND day <= $2::date
+       ORDER BY day ASC`,
+      [startDay, endDay]
+    )
+    return result.rows.map((row) => ({
+      day: String(row.day).slice(0, 10),
+      openNl: row.open_nl == null ? null : Number(row.open_nl),
+      closeNl: row.close_nl == null ? null : Number(row.close_nl),
+      reportSentAt: row.report_sent_at ? new Date(row.report_sent_at).toISOString() : null,
+    })) satisfies SessionDay[]
+  }, null as SessionDay[] | null)
+
+  if (fromDb) return fromDb
+  return [...memoryDays.values()]
+    .filter((row) => row.day >= startDay && row.day <= endDay)
+    .sort((a, b) => a.day.localeCompare(b.day))
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { countLiveEntriesToday, evaluateDayHalt, sessionPnl } from './dayPlan.js'
-import { previousWeekday, reportSessionDate } from './marketHours.js'
+import { nyWeekStart, previousWeekday, reportSessionDate } from './marketHours.js'
 
 describe('evaluateDayHalt', () => {
   it('halts new buys at the profit target', () => {
@@ -30,5 +30,12 @@ describe('reportSessionDate', () => {
 
   it('uses today after 16:05 ET', () => {
     expect(reportSessionDate(new Date('2026-09-29T16:10:00-04:00'))).toBe('2026-09-29')
+  })
+})
+
+describe('nyWeekStart', () => {
+  it('returns the Monday of the NY week', () => {
+    expect(nyWeekStart('2026-10-06')).toBe('2026-10-05')
+    expect(nyWeekStart('2026-10-05')).toBe('2026-10-05')
   })
 })

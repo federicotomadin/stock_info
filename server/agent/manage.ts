@@ -45,14 +45,24 @@ export async function manageOpenPositions(
     if (!(position.quantity > 0)) continue
 
     const ticker = toTickerSymbol(position.symbol)
-    const price = position.marketPrice && position.marketPrice > 0 ? position.marketPrice : null
+    const journal = await findOpenTrade(ticker)
+    if (!journal) continue
+
+    let price = position.marketPrice && position.marketPrice > 0 ? position.marketPrice : null
     const avgCost = position.avgCost && position.avgCost > 0 ? position.avgCost : price
+    if (!price) {
+      try {
+        const quote = await fetchSymbolData(ticker)
+        if (Number.isFinite(quote?.price) && quote.price > 0) price = quote.price
+      } catch {
+        /* fall through */
+      }
+    }
     if (!price || !avgCost) {
       await log('skip', 'Sin precio de mercado para ajustar el stop.', ticker)
       continue
     }
 
-    const journal = await findOpenTrade(ticker)
     const existingStop = stopForSymbol(orders, position.symbol)
     const originalStop = journal?.originalStop ?? defaultProtectiveStop(price, avgCost, ORDER_LIMITS.defaultStopPct)
     const currentStop = existingStop?.stopPrice ?? journal?.stopLoss ?? originalStop

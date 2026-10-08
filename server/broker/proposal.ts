@@ -135,7 +135,7 @@ export function sizeProposalByRisk(
     return { ok: false, error: 'El stop quedó al mismo precio que la entrada.' }
   }
   if (!(opts.equityUsd > 0)) {
-    return { ok: false, error: 'No se pudo leer el equity de la cuenta paper.' }
+    return { ok: false, error: 'No se pudo leer el equity de la cuenta IB.' }
   }
 
   const riskBudget = opts.equityUsd * (opts.riskPct / 100)
