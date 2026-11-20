@@ -84,6 +84,15 @@ const NY_WEEKDAY_OFFSET: Record<string, number> = {
   Sun: 6,
 }
 
+/** The Mon–Sun week that ended just before the NY week that contains `today`. */
+export function previousCompletedWeekRange(today = nyCalendarDate()): { weekStart: string; weekEnd: string } {
+  const thisMonday = nyWeekStart(today)
+  return {
+    weekStart: shiftIsoDate(thisMonday, -7),
+    weekEnd: shiftIsoDate(thisMonday, -1),
+  }
+}
+
 /** Monday (NY calendar) of the week that contains `isoDate`. */
 export function nyWeekStart(isoDate: string): string {
   const [year, month, day] = isoDate.split('-').map(Number)

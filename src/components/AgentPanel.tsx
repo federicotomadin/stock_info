@@ -48,6 +48,11 @@ interface AgentStatus {
     dailyLossUsd: number
     weeklyProfitUsd: number
     weeklyLossUsd: number
+    dailyProfitPct?: number | null
+    dailyLossPct?: number | null
+    weeklyProfitPct?: number | null
+    weeklyLossPct?: number | null
+    goalEquityUsd?: number | null
     reportEmail: string | null
     allowLive?: boolean
   }
@@ -62,6 +67,18 @@ interface AgentStatus {
 
 const usd = (value: number | null | undefined): string =>
   Number.isFinite(value) ? `$${Number(value).toFixed(2)}` : '—'
+
+function goalBand(
+  profitPct: number | null | undefined,
+  profitUsd: number,
+  lossPct: number | null | undefined,
+  lossUsd: number
+): string {
+  if (profitPct != null) {
+    return `+${profitPct}% (${usd(profitUsd)}) / −${lossPct ?? '—'}% (${usd(lossUsd)})`
+  }
+  return `+${usd(profitUsd)} / −${usd(lossUsd)}`
+}
 
 async function agentRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(apiEndpoint(path), {
@@ -162,8 +179,8 @@ export function AgentPanel() {
 
       {!isPaper ? (
         <p className="status warning">
-          Metas día +US${config?.dailyProfitUsd ?? '—'} / −US${config?.dailyLossUsd ?? '—'} y semana +US$
-          {config?.weeklyProfitUsd ?? '—'} / −US${config?.weeklyLossUsd ?? '—'}: solo frenan nuevas compras; no
+          Metas día {goalBand(config?.dailyProfitPct, config?.dailyProfitUsd ?? 0, config?.dailyLossPct, config?.dailyLossUsd ?? 0)} y semana{' '}
+          {goalBand(config?.weeklyProfitPct, config?.weeklyProfitUsd ?? 0, config?.weeklyLossPct, config?.weeklyLossUsd ?? 0)}: solo frenan nuevas compras; no
           cierran posiciones ni garantizan ganancias.
         </p>
       ) : null}
@@ -184,8 +201,9 @@ export function AgentPanel() {
           · máx. US${config.maxOrderUsd} ·{' '}
           {config.maxPositions} posiciones · {limits?.confirmedToday ?? 0}/{config.maxOrdersPerDay} órdenes hoy
           · ciclo cada {Math.round((status.intervalMs ?? 0) / 60000)} min
-          {config.aiVeto ? ' · veto IA' : ''}. Meta día +US${config.dailyProfitUsd} / −US$
-          {config.dailyLossUsd} · semana +US${config.weeklyProfitUsd} / −US${config.weeklyLossUsd} (deja de
+          {config.aiVeto ? ' · veto IA' : ''}. Meta día {goalBand(config.dailyProfitPct, config.dailyProfitUsd, config.dailyLossPct, config.dailyLossUsd)} · semana{' '}
+          {goalBand(config.weeklyProfitPct, config.weeklyProfitUsd, config.weeklyLossPct, config.weeklyLossUsd)}
+          {config.goalEquityUsd ? ` · base ${usd(config.goalEquityUsd)}` : ''} (deja de
           comprar; no liquida). Mail a {config.reportEmail ?? 'AGENT_REPORT_EMAIL (faltante)'}.
         </p>
       ) : null}

@@ -139,6 +139,23 @@ app.post('/api/newsletter/send-weekly', async (req, res) => {
   }
 })
 
+app.post('/api/agent/send-weekly-report', async (req, res) => {
+  const secret = process.env.NEWSLETTER_CRON_SECRET?.trim()
+  const provided = req.get('x-cron-secret') ?? req.query.secret
+  if (!secret || provided !== secret) {
+    res.status(401).json({ error: 'Unauthorized' })
+    return
+  }
+
+  try {
+    const { sendWeeklyAgentReport } = await import('./agent/report.js')
+    const result = await sendWeeklyAgentReport({ force: req.query.force === 'true' })
+    res.json({ ok: true, ...result })
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error?.message ?? 'Could not send weekly agent report.' })
+  }
+})
+
 app.get('/api/screener/status', async (_req, res) => {
   if (!isDatabaseEnabled()) {
     res.json({ enabled: false })

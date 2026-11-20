@@ -44,7 +44,14 @@ AGENT_ALLOW_LIVE=false
 IBKR_ENABLED=false
 ```
 
-`GET /api/broker/status` y el panel **Agente** muestran `brokerProvider: alpaca` y cuenta paper.
+`GET /api/broker/status` y `GET /api/agent/status` muestran `brokerProvider: alpaca` y cuenta paper.
+
+En **producción** (GitHub Pages) no hay pestaña Agente a propósito (`localOnly` en el broker). En
+**Render**, con `AGENT_ENABLED=true`, el loop arranca solo (`RENDER=true` o `AGENT_AUTO_START=true`).
+
+Reportes por mail (`AGENT_REPORT_EMAIL` + `RESEND_API_KEY`): resumen **diario** tras el cierre NY y
+**semanal** los lunes vía workflow `weekly-agent-report.yml` (mismo `NEWSLETTER_CRON_SECRET` que el newsletter).
+Las reglas Buffett / noticias / Mr. Market siguen los `AGENT_*` del entorno (por defecto activas).
 
 ## Day-trader-skill (complemento del agente)
 

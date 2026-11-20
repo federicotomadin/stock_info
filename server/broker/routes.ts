@@ -3,6 +3,7 @@ import { parseSymbols } from '../lib/utils.js'
 import { isBrokerEnabled, BROKER_PROVIDER } from './config.js'
 import { AGENT_CONFIG } from '../agent/config.js'
 import { getAgentSnapshot, runAgentCycle, startAgent, stopAgent } from '../agent/loop.js'
+import { bootstrapAgentLoop } from '../agent/bootstrap.js'
 import { sendDailySessionReport } from '../agent/report.js'
 import { nyCalendarDate } from '../agent/marketHours.js'
 import {
@@ -182,4 +183,6 @@ export function registerBrokerRoutes(app: Express): void {
       sendError(res, error)
     }
   })
+
+  bootstrapAgentLoop()
 }

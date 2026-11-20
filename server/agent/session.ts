@@ -190,6 +190,40 @@ export async function listFillsForDay(day: string): Promise<StoredFill[]> {
   return [...memoryFills.values()].filter((fill) => fill.sessionDate === day)
 }
 
+const memoryWeeklyReports = new Set<string>()
+
+export async function tryClaimWeeklyReport(weekStart: string): Promise<boolean> {
+  if (memoryWeeklyReports.has(weekStart)) return false
+
+  const claimed = await tryRun(async () => {
+    const result = await getPool().query(
+      `INSERT INTO agent_weekly_reports (week_start)
+       VALUES ($1::date)
+       ON CONFLICT (week_start) DO NOTHING
+       RETURNING week_start`,
+      [weekStart]
+    )
+    return (result.rowCount ?? 0) > 0
+  }, null as boolean | null)
+
+  if (claimed === true) {
+    memoryWeeklyReports.add(weekStart)
+    return true
+  }
+  if (claimed === false) return false
+
+  if (memoryWeeklyReports.has(weekStart)) return false
+  memoryWeeklyReports.add(weekStart)
+  return true
+}
+
+export async function clearWeeklyReportClaim(weekStart: string): Promise<void> {
+  memoryWeeklyReports.delete(weekStart)
+  await tryRun(async () => {
+    await getPool().query(`DELETE FROM agent_weekly_reports WHERE week_start = $1::date`, [weekStart])
+  }, undefined)
+}
+
 export async function listSessionDaysBetween(startDay: string, endDay: string): Promise<SessionDay[]> {
   const fromDb = await tryRun(async () => {
     const result = await getPool().query(

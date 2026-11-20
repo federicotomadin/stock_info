@@ -130,6 +130,11 @@ export async function initSchema(): Promise<void> {
     );
 
     CREATE INDEX IF NOT EXISTS idx_agent_fills_session_date ON agent_fills (session_date);
+
+    CREATE TABLE IF NOT EXISTS agent_weekly_reports (
+      week_start DATE PRIMARY KEY,
+      sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `)
 
   await pool.query(`

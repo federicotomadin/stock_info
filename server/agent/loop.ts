@@ -15,6 +15,7 @@ import { sizeProposalByRisk } from '../broker/proposal.js'
 import { fetchSymbolData } from '../marketData.js'
 import { AGENT_CONFIG } from './config.js'
 import { evaluateDayHalt, evaluateWeekHalt, sessionPnl, countLiveEntriesToday, computeWeeklyPnl } from './dayPlan.js'
+import { formatGoalLabel, resolveGoalLimits } from './goals.js'
 import {
   expireOrphanTrades,
   finishAgentRun,
@@ -311,23 +312,24 @@ export async function runAgentCycle(opts: { ignoreHours?: boolean } = {}): Promi
 
     const session = await getSessionDay(today)
     const pnl = sessionPnl(session?.openNl ?? snapshot.netLiquidation, snapshot.netLiquidation) ?? 0
-    const halt = evaluateDayHalt(pnl, AGENT_CONFIG.dailyProfitUsd, AGENT_CONFIG.dailyLossUsd)
+    const goals = resolveGoalLimits(snapshot.netLiquidation)
+    const halt = evaluateDayHalt(pnl, goals.dailyProfitUsd, goals.dailyLossUsd)
     if (halt.halt) {
       const summary =
         halt.reason === 'profit'
-          ? `Meta diaria +US$${AGENT_CONFIG.dailyProfitUsd} alcanzada (P&L ${halt.pnl.toFixed(2)}). No abre trades nuevos.`
-          : `Stop diario −US$${AGENT_CONFIG.dailyLossUsd} tocado (P&L ${halt.pnl.toFixed(2)}). No abre trades nuevos.`
+          ? `Meta diaria ${formatGoalLabel('profit', 'daily', goals)} alcanzada (P&L ${halt.pnl.toFixed(2)}). No abre trades nuevos.`
+          : `Stop diario ${formatGoalLabel('loss', 'daily', goals)} tocado (P&L ${halt.pnl.toFixed(2)}). No abre trades nuevos.`
       await logDecision(runId, 'skip', summary)
       return finish('ok', summary)
     }
 
     const weekPnl = (await computeWeeklyPnl(today, snapshot.netLiquidation)) ?? 0
-    const weekHalt = evaluateWeekHalt(weekPnl, AGENT_CONFIG.weeklyProfitUsd, AGENT_CONFIG.weeklyLossUsd)
+    const weekHalt = evaluateWeekHalt(weekPnl, goals.weeklyProfitUsd, goals.weeklyLossUsd)
     if (weekHalt.halt) {
       const summary =
         weekHalt.reason === 'profit'
-          ? `Meta semanal +US$${AGENT_CONFIG.weeklyProfitUsd} alcanzada (P&L sem. ${weekHalt.pnl.toFixed(2)}). No abre trades nuevos.`
-          : `Stop semanal −US$${AGENT_CONFIG.weeklyLossUsd} tocado (P&L sem. ${weekHalt.pnl.toFixed(2)}). No abre trades nuevos.`
+          ? `Meta semanal ${formatGoalLabel('profit', 'weekly', goals)} alcanzada (P&L sem. ${weekHalt.pnl.toFixed(2)}). No abre trades nuevos.`
+          : `Stop semanal ${formatGoalLabel('loss', 'weekly', goals)} tocado (P&L sem. ${weekHalt.pnl.toFixed(2)}). No abre trades nuevos.`
       await logDecision(runId, 'skip', summary)
       return finish('ok', summary)
     }
@@ -375,9 +377,10 @@ export async function getAgentSnapshot(broker: BrokerStatus) {
     }
   }
   const dayPnl = sessionPnl(session?.openNl ?? null, liveNl ?? session?.closeNl ?? null)
-  const halt = evaluateDayHalt(dayPnl ?? 0, AGENT_CONFIG.dailyProfitUsd, AGENT_CONFIG.dailyLossUsd)
+  const goals = resolveGoalLimits(liveNl)
+  const halt = evaluateDayHalt(dayPnl ?? 0, goals.dailyProfitUsd, goals.dailyLossUsd)
   const weekPnl = await computeWeeklyPnl(today, liveNl)
-  const weekHalt = evaluateWeekHalt(weekPnl ?? 0, AGENT_CONFIG.weeklyProfitUsd, AGENT_CONFIG.weeklyLossUsd)
+  const weekHalt = evaluateWeekHalt(weekPnl ?? 0, goals.weeklyProfitUsd, goals.weeklyLossUsd)
   const liveAgentEnabled =
     BROKER_PROVIDER === 'alpaca'
       ? ALPACA_CONFIG.paper || (ALPACA_CONFIG.allowLive && AGENT_CONFIG.allowLive)
@@ -411,10 +414,15 @@ export async function getAgentSnapshot(broker: BrokerStatus) {
       maxOrdersPerDay: ORDER_LIMITS.maxOrdersPerDay,
       aiVeto: AGENT_CONFIG.aiVeto,
       allowOutsideHours: AGENT_CONFIG.allowOutsideHours,
-      dailyProfitUsd: AGENT_CONFIG.dailyProfitUsd,
-      dailyLossUsd: AGENT_CONFIG.dailyLossUsd,
-      weeklyProfitUsd: AGENT_CONFIG.weeklyProfitUsd,
-      weeklyLossUsd: AGENT_CONFIG.weeklyLossUsd,
+      dailyProfitUsd: goals.dailyProfitUsd,
+      dailyLossUsd: goals.dailyLossUsd,
+      weeklyProfitUsd: goals.weeklyProfitUsd,
+      weeklyLossUsd: goals.weeklyLossUsd,
+      dailyProfitPct: AGENT_CONFIG.dailyProfitPct,
+      dailyLossPct: AGENT_CONFIG.dailyLossPct,
+      weeklyProfitPct: AGENT_CONFIG.weeklyProfitPct,
+      weeklyLossPct: AGENT_CONFIG.weeklyLossPct,
+      goalEquityUsd: goals.equityBase,
       reportEmail: AGENT_CONFIG.reportEmail || null,
       allowLive: liveAgentEnabled,
     },
