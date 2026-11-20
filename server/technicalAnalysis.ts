@@ -2,34 +2,50 @@ import { FMP_API_KEY } from './config.js'
 import { fetchWithTimeout } from './lib/http.js'
 import { buildSmaSeries } from './lib/indicators.js'
 import { fetchOhlcvFromFmp } from './providers/fmp.js'
+import { fetchOhlcvFromTwelveData } from './providers/twelveData.js'
 import { fetchOhlcvFromYahoo } from './providers/yahoo.js'
 
 // In-memory per-symbol technical-analysis cache, persisted to disk and loaded at startup.
 export const technicalAnalysisCache = new Map()
 
+let fmpBlockedUntil = 0
+const FMP_LIMIT_BACKOFF_MS = 60 * 60 * 1000
+
 /**
- * Tries FMP first (better data, especially adjusted closes), then Yahoo as fallback.
- * Returns { candles, dataSource, fmpError? } so the endpoint can surface the source used.
+ * OHLCV chain: FMP -> Twelve Data -> Yahoo. When FMP reports its quota is exhausted
+ * ("Limit Reach") it is paused for an hour instead of being hit on every request.
+ * Returns { candles, dataSource, fmpError } so the endpoint can surface the source used.
  */
 export async function fetchOhlcv(symbol, options = {}) {
-  let fmpError = null
+  const notes = []
 
-  if (FMP_API_KEY) {
+  if (!FMP_API_KEY) {
+    notes.push('FMP: FMP_API_KEY not configured')
+  } else if (Date.now() < fmpBlockedUntil) {
+    notes.push('FMP: en pausa por límite de cupo')
+  } else {
     try {
       const candles = await fetchOhlcvFromFmp(symbol, options)
       return { candles, dataSource: 'fmp', fmpError: null }
     } catch (error) {
-      fmpError = error?.message ?? String(error)
+      const message = error?.message ?? String(error)
+      notes.push(`FMP: ${message}`)
+      if (/limit reach/i.test(message)) fmpBlockedUntil = Date.now() + FMP_LIMIT_BACKOFF_MS
     }
-  } else {
-    fmpError = 'FMP_API_KEY not configured'
+  }
+
+  try {
+    const candles = await fetchOhlcvFromTwelveData(symbol, options)
+    return { candles, dataSource: 'twelvedata', fmpError: notes.join(' | ') || null }
+  } catch (error) {
+    notes.push(`Twelve Data: ${error?.message ?? error}`)
   }
 
   try {
     const candles = await fetchOhlcvFromYahoo(symbol, options)
-    return { candles, dataSource: 'yahoo', fmpError }
+    return { candles, dataSource: 'yahoo', fmpError: notes.join(' | ') || null }
   } catch (yahooError) {
-    const message = `OHLCV unavailable for ${symbol}. FMP: ${fmpError}. Yahoo: ${yahooError?.message ?? yahooError}`
+    const message = `OHLCV unavailable for ${symbol}. ${notes.join('. ')}. Yahoo: ${yahooError?.message ?? yahooError}`
     throw new Error(message)
   }
 }

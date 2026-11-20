@@ -18,6 +18,8 @@ export const PROFILE_CACHE_TTL_MS = 48 * 60 * 60 * 1000
 
 export const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY?.trim()
 export const FMP_API_KEY = process.env.FMP_API_KEY?.trim()
+// Twelve Data free plan: 800 credits/day, 8/min. Optional OHLCV fallback between FMP and Yahoo.
+export const TWELVE_DATA_API_KEY = process.env.TWELVE_DATA_API_KEY?.trim()
 
 // Fundamentals change at most quarterly; a long TTL keeps FMP's free quota from being
 // burned by re-visits or dev-server restarts within the same day.

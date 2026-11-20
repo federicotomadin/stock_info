@@ -1,5 +1,7 @@
 import { fetchFmpFundamentalsBundle } from './providers/fmp.js'
 import { fetchFinnhubFundamentalsBundle } from './providers/finnhub.js'
+import { saveMapCacheToDisk } from './lib/cache.js'
+import { FMP_FUNDAMENTALS_CACHE_FILE, FMP_FUNDAMENTALS_CACHE_TTL_MS } from './config.js'
 
 // In-memory per-symbol fundamentals cache, persisted to disk on write and loaded at startup.
 export const fmpFundamentalsCache = new Map()
@@ -77,4 +79,39 @@ export async function fetchFundamentalsBundle(symbol) {
   } catch {
     return fmp
   }
+}
+
+const FAILED_RETRY_MS = 30 * 60 * 1000
+const failedAt = new Map<string, number>()
+
+/**
+ * Same 24 h cache the /api/fmp/fundamentals endpoint uses, so the agent's veto and the UI
+ * share one FMP fetch per symbol. Empty results (e.g. FMP "Limit Reach") are not cached:
+ * they retry after 30 min instead of hiding data for a whole day.
+ */
+export async function fetchFundamentalsBundleCached(symbol: string) {
+  const key = symbol.trim().toUpperCase()
+  const cached = fmpFundamentalsCache.get(key)
+  if (cached && Date.now() - cached.savedAt < FMP_FUNDAMENTALS_CACHE_TTL_MS) {
+    return cached.value
+  }
+
+  const lastFail = failedAt.get(key)
+  if (lastFail && Date.now() - lastFail < FAILED_RETRY_MS) {
+    throw new Error(`Fundamentals de ${key} no disponibles (reintento en ~30 min).`)
+  }
+
+  const value = await fetchFundamentalsBundle(key)
+  const hasData = Boolean(value.keyMetricsTtm || value.ratiosTtm || value.incomeStatementAnnual?.length)
+  if (!hasData) {
+    failedAt.set(key, Date.now())
+    throw new Error(
+      value.keyMetricsTtmError ?? value.profileError ?? 'Sin datos fundamentales (posible límite de FMP).'
+    )
+  }
+
+  failedAt.delete(key)
+  fmpFundamentalsCache.set(key, { value, savedAt: Date.now() })
+  void saveMapCacheToDisk(FMP_FUNDAMENTALS_CACHE_FILE, fmpFundamentalsCache)
+  return value
 }

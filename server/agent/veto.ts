@@ -1,7 +1,7 @@
 import { callAiAnalysis, hasAnyAiKey } from '../ai.js'
 import { parseAiAnalysisJson } from '../lib/utils.js'
 import type { BracketProposal } from '../broker/proposal.js'
-import { fetchFundamentalsBundle } from '../fundamentals.js'
+import { fetchFundamentalsBundleCached } from '../fundamentals.js'
 import { AGENT_CONFIG } from './config.js'
 import {
   checkBlockedTicker,
@@ -24,7 +24,7 @@ export async function vetoEntry(
 
   if (AGENT_CONFIG.buffettFundamentals) {
     try {
-      const bundle = await fetchFundamentalsBundle(proposal.symbol)
+      const bundle = await fetchFundamentalsBundleCached(proposal.symbol)
       fundamentalsText = formatFundamentalsBrief(bundle)
       const { sector: sectorName } = extractFundamentalMetrics(bundle)
 
