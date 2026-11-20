@@ -1,4 +1,4 @@
-import { IBKR_CONFIG, ORDER_LIMITS } from '../broker/config.js'
+import { ALPACA_CONFIG, BROKER_PROVIDER, IBKR_CONFIG, ORDER_LIMITS } from '../broker/config.js'
 import {
   getAccountSnapshot,
   getBrokerStatus,
@@ -9,7 +9,7 @@ import {
   toTickerSymbol,
   type AccountSnapshot,
   type BrokerStatus,
-} from '../broker/ibkr.js'
+} from '../broker/index.js'
 import { getOrderLimits, recordConfirmedOrder } from '../broker/service.js'
 import { sizeProposalByRisk } from '../broker/proposal.js'
 import { fetchSymbolData } from '../marketData.js'
@@ -203,15 +203,27 @@ export async function runAgentCycle(opts: { ignoreHours?: boolean } = {}): Promi
   try {
     const broker = await getBrokerStatus()
     if (!broker.connected || !broker.account) {
-      await logDecision(runId, 'skip', broker.reason ?? 'IB Gateway no está conectado.')
-      return finish('skipped', broker.reason ?? 'Sin conexión a IB.')
+      await logDecision(
+        runId,
+        'skip',
+        broker.reason ?? (BROKER_PROVIDER === 'alpaca' ? 'Alpaca no conectado.' : 'IB Gateway no está conectado.')
+      )
+      return finish(
+        'skipped',
+        broker.reason ?? (BROKER_PROVIDER === 'alpaca' ? 'Sin conexión a Alpaca.' : 'Sin conexión a IB.')
+      )
     }
-    const liveAgentOk = IBKR_CONFIG.allowLive && AGENT_CONFIG.allowLive
+    const liveAgentOk =
+      BROKER_PROVIDER === 'alpaca'
+        ? ALPACA_CONFIG.paper || (ALPACA_CONFIG.allowLive && AGENT_CONFIG.allowLive)
+        : IBKR_CONFIG.allowLive && AGENT_CONFIG.allowLive
     if (!broker.paper && !liveAgentOk) {
       await logDecision(
         runId,
         'skip',
-        'Cuenta real: activá IBKR_ALLOW_LIVE=true y AGENT_ALLOW_LIVE=true en .env (solo local).'
+        BROKER_PROVIDER === 'alpaca'
+          ? 'Alpaca live: activá ALPACA_ALLOW_LIVE=true y AGENT_ALLOW_LIVE=true.'
+          : 'Cuenta real: activá IBKR_ALLOW_LIVE=true y AGENT_ALLOW_LIVE=true en .env (solo local).'
       )
       return finish('skipped', 'Cuenta real bloqueada para el agente.')
     }
@@ -366,12 +378,16 @@ export async function getAgentSnapshot(broker: BrokerStatus) {
   const halt = evaluateDayHalt(dayPnl ?? 0, AGENT_CONFIG.dailyProfitUsd, AGENT_CONFIG.dailyLossUsd)
   const weekPnl = await computeWeeklyPnl(today, liveNl)
   const weekHalt = evaluateWeekHalt(weekPnl ?? 0, AGENT_CONFIG.weeklyProfitUsd, AGENT_CONFIG.weeklyLossUsd)
-  const liveAgentEnabled = IBKR_CONFIG.allowLive && AGENT_CONFIG.allowLive
+  const liveAgentEnabled =
+    BROKER_PROVIDER === 'alpaca'
+      ? ALPACA_CONFIG.paper || (ALPACA_CONFIG.allowLive && AGENT_CONFIG.allowLive)
+      : IBKR_CONFIG.allowLive && AGENT_CONFIG.allowLive
   return {
     enabled: AGENT_CONFIG.enabled,
     running: runtime.running,
     busy: runtime.busy,
-    paperOnly: !liveAgentEnabled,
+    paperOnly: BROKER_PROVIDER === 'alpaca' ? ALPACA_CONFIG.paper : !liveAgentEnabled,
+    brokerProvider: BROKER_PROVIDER,
     intervalMs: AGENT_CONFIG.intervalMs,
     lastCycle: runtime.lastCycle,
     broker,

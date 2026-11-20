@@ -5,6 +5,25 @@ const numberFromEnv = (name: string, fallback: number): number => {
   return Number.isFinite(value) && value > 0 ? value : fallback
 }
 
+export const BROKER_PROVIDER = (process.env.BROKER_PROVIDER || 'ibkr').trim().toLowerCase() as 'ibkr' | 'alpaca'
+
+export const ALPACA_CONFIG = {
+  apiKeyId: process.env.ALPACA_API_KEY_ID?.trim() || '',
+  apiSecretKey: process.env.ALPACA_API_SECRET_KEY?.trim() || '',
+  paper: process.env.ALPACA_PAPER !== 'false',
+  allowLive: process.env.ALPACA_ALLOW_LIVE === 'true',
+  baseUrl:
+    process.env.ALPACA_BASE_URL?.trim() ||
+    (process.env.ALPACA_PAPER === 'false' ? 'https://api.alpaca.markets' : 'https://paper-api.alpaca.markets'),
+}
+
+export function isBrokerEnabled(): boolean {
+  if (BROKER_PROVIDER === 'alpaca') {
+    return Boolean(ALPACA_CONFIG.apiKeyId && ALPACA_CONFIG.apiSecretKey)
+  }
+  return process.env.IBKR_ENABLED === 'true'
+}
+
 export const IBKR_CONFIG = {
   enabled: process.env.IBKR_ENABLED === 'true',
   host: process.env.IBKR_HOST?.trim() || '127.0.0.1',

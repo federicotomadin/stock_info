@@ -4,7 +4,7 @@ import { fetchTechnicalContext } from '../lib/supports.js'
 import { fetchSymbolData } from '../marketData.js'
 import { fetchMarketCaps } from '../providers/nasdaqScreener.js'
 import { ORDER_LIMITS } from './config.js'
-import { placeBracketOrder } from './ibkr.js'
+import { placeBracketOrder } from './index.js'
 import { buildBracketProposal, type BracketProposal } from './proposal.js'
 
 interface StoredProposal extends BracketProposal {

@@ -1,4 +1,4 @@
-import { cancelOrder, getOpenOrders, placeMarketSell, toTickerSymbol } from '../broker/ibkr.js'
+import { cancelOrder, getOpenOrders, placeMarketSell, toTickerSymbol } from '../broker/index.js'
 import { closeTrade, type AgentDecisionKind, type AgentTrade } from './journal.js'
 
 interface Position {
@@ -8,7 +8,7 @@ interface Position {
 }
 
 interface OpenOrder {
-  orderId: number
+  orderId: number | string
   symbol: string
   action: string
 }

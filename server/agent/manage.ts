@@ -2,7 +2,7 @@ import { analyzeTrend } from '../db/trend.js'
 import { fetchTechnicalContext } from '../lib/supports.js'
 import { fetchSymbolData } from '../marketData.js'
 import { ORDER_LIMITS } from '../broker/config.js'
-import { modifyStopOrder, placeProtectiveStop, toTickerSymbol } from '../broker/ibkr.js'
+import { modifyStopOrder, placeProtectiveStop, toTickerSymbol } from '../broker/index.js'
 import { defaultProtectiveStop, plannedStop } from './stops.js'
 import { findOpenTrade, updateTradeStop, type AgentDecisionKind } from './journal.js'
 
@@ -14,8 +14,8 @@ interface Position {
 }
 
 interface OpenOrder {
-  orderId: number
-  parentId: number | null
+  orderId: number | string
+  parentId: number | string | null
   symbol: string
   action: string
   orderType: string
@@ -26,7 +26,8 @@ interface OpenOrder {
 type LogFn = (kind: AgentDecisionKind, detail: string, symbol?: string | null) => Promise<unknown>
 
 function isStopOrder(order: OpenOrder): boolean {
-  return order.action === 'SELL' && String(order.orderType).toUpperCase().includes('STP')
+  const type = String(order.orderType).toUpperCase()
+  return order.action === 'SELL' && (type.includes('STP') || type === 'STOP' || type === 'STOP_LIMIT')
 }
 
 function stopForSymbol(orders: OpenOrder[], symbol: string): OpenOrder | undefined {

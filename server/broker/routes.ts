@@ -1,11 +1,18 @@
 import type { Express, NextFunction, Request, Response } from 'express'
 import { parseSymbols } from '../lib/utils.js'
-import { IBKR_CONFIG } from './config.js'
+import { isBrokerEnabled, BROKER_PROVIDER } from './config.js'
 import { AGENT_CONFIG } from '../agent/config.js'
 import { getAgentSnapshot, runAgentCycle, startAgent, stopAgent } from '../agent/loop.js'
 import { sendDailySessionReport } from '../agent/report.js'
 import { nyCalendarDate } from '../agent/marketHours.js'
-import { cancelOrder, connectBroker, getAccountSnapshot, getBrokerStatus, getOpenOrders, getPositions } from './ibkr.js'
+import {
+  cancelOrder,
+  connectBroker,
+  getAccountSnapshot,
+  getBrokerStatus,
+  getOpenOrders,
+  getPositions,
+} from './index.js'
 import { BrokerRequestError, confirmProposal, createProposal, getOrderLimits } from './service.js'
 
 const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
@@ -38,7 +45,7 @@ function sendError(res: Response, error: unknown): void {
 }
 
 export function registerBrokerRoutes(app: Express): void {
-  if (!IBKR_CONFIG.enabled) {
+  if (!isBrokerEnabled()) {
     app.get('/api/broker/status', (_req, res) => {
       res.json({ enabled: false })
     })
@@ -97,11 +104,12 @@ export function registerBrokerRoutes(app: Express): void {
   })
 
   app.delete('/api/broker/orders/:id', async (req, res) => {
-    const orderId = Number(req.params.id)
-    if (!Number.isInteger(orderId) || orderId <= 0) {
+    const raw = String(req.params.id ?? '').trim()
+    if (!raw) {
       res.status(400).json({ error: 'Order id inválido.' })
       return
     }
+    const orderId = /^\d+$/.test(raw) ? Number(raw) : raw
     try {
       await cancelOrder(orderId)
       res.json({ ok: true })
@@ -115,7 +123,11 @@ export function registerBrokerRoutes(app: Express): void {
   app.get('/api/agent/status', async (_req, res) => {
     try {
       const broker = await getBrokerStatus()
-      res.json({ ...(await getAgentSnapshot(broker)), enabled: AGENT_CONFIG.enabled && IBKR_CONFIG.enabled })
+      res.json({
+        ...(await getAgentSnapshot(broker)),
+        enabled: AGENT_CONFIG.enabled && isBrokerEnabled(),
+        brokerProvider: BROKER_PROVIDER,
+      })
     } catch (error) {
       sendError(res, error)
     }

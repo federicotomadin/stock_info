@@ -1,5 +1,6 @@
 import { sendResendEmail, isMailConfigured } from '../lib/mail.js'
-import { toTickerSymbol, type AccountSnapshot } from '../broker/ibkr.js'
+import { toTickerSymbol } from '../broker/symbols.js'
+import type { AccountSnapshot } from '../broker/types.js'
 import { AGENT_CONFIG } from './config.js'
 import {
   clearDailyReportClaim,

@@ -30,6 +30,22 @@ y configura `FINNHUB_API_KEY` con una key gratuita de [Finnhub](https://finnhub.
 - frontend Vite en `http://localhost:5173`
 - API local en `http://localhost:9001`
 
+## Agente + Alpaca paper (sin IB Gateway)
+
+Con `BROKER_PROVIDER=alpaca` y keys de **paper** en `.env`, el agente opera vía REST (deployable en Render/AWS sin Gateway).
+
+```env
+BROKER_PROVIDER=alpaca
+ALPACA_API_KEY_ID=...
+ALPACA_API_SECRET_KEY=...
+ALPACA_PAPER=true
+AGENT_ENABLED=true
+AGENT_ALLOW_LIVE=false
+IBKR_ENABLED=false
+```
+
+`GET /api/broker/status` y el panel **Agente** muestran `brokerProvider: alpaca` y cuenta paper.
+
 ## Day-trader-skill (complemento del agente)
 
 Incluye el pack [day-trader-skill](https://github.com/jakeschincariol/day-trader-skill) en

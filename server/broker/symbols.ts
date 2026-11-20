@@ -1,0 +1,1 @@
+export const toTickerSymbol = (symbol: string): string => symbol.toUpperCase().replace(/\s+/g, '.')

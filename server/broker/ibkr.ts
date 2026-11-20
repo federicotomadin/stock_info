@@ -11,8 +11,10 @@ import {
 import { filter, firstValueFrom, timeout } from 'rxjs'
 import { IBKR_CONFIG } from './config.js'
 import type { BracketProposal } from './proposal.js'
+import { toTickerSymbol } from './symbols.js'
+import type { BrokerOrderId } from './types.js'
 
-export const toTickerSymbol = (symbol: string): string => symbol.toUpperCase().replace(/\s+/g, '.')
+export { toTickerSymbol }
 
 const REQUEST_TIMEOUT_MS = 8000
 const REJECTION_WAIT_MS = 3000
@@ -362,17 +364,25 @@ async function waitForOrderRejection(orderIds: number[]): Promise<string | null>
 
 /** Re-sends the same stop id with a higher trigger; IB treats this as a modify. */
 export async function modifyStopOrder(params: {
-  orderId: number
-  parentId: number | null
+  orderId: BrokerOrderId
+  parentId: BrokerOrderId | null
   symbol: string
   quantity: number
   stopPrice: number
 }): Promise<void> {
   const account = await requireTradableAccount()
+  const orderId = typeof params.orderId === 'number' ? params.orderId : Number(params.orderId)
+  const parentId =
+    params.parentId == null
+      ? undefined
+      : typeof params.parentId === 'number'
+        ? params.parentId
+        : Number(params.parentId)
+  if (!Number.isFinite(orderId)) throw new Error('IB modifyStopOrder requiere un ID numérico.')
   const stop = {
     account,
-    orderId: params.orderId,
-    parentId: params.parentId ?? undefined,
+    orderId,
+    parentId,
     action: OrderAction.SELL,
     orderType: OrderType.STP,
     totalQuantity: params.quantity,
@@ -381,8 +391,8 @@ export async function modifyStopOrder(params: {
     transmit: true,
     outsideRth: false,
   }
-  getApi().placeOrder(params.orderId, stockContract(params.symbol), stop)
-  const reason = await waitForOrderRejection([params.orderId])
+  getApi().placeOrder(orderId, stockContract(params.symbol), stop)
+  const reason = await waitForOrderRejection([orderId])
   if (reason) throw new Error(`IB rechazó el stop: ${reason}`)
 }
 
@@ -442,7 +452,11 @@ export async function placeMarketSell(params: { symbol: string; quantity: number
 }
 
 /** Cancelling the parent entry also cancels its take-profit and stop-loss children. */
-export async function cancelOrder(orderId: number): Promise<void> {
+export async function cancelOrder(orderId: BrokerOrderId): Promise<void> {
   await requireTradableAccount()
-  getApi().cancelOrder(orderId)
+  const id = typeof orderId === 'number' ? orderId : Number(orderId)
+  if (!Number.isFinite(id)) {
+    throw new Error('IB cancelOrder requires un ID numérico de orden.')
+  }
+  getApi().cancelOrder(id)
 }

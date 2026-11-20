@@ -131,4 +131,12 @@ export async function initSchema(): Promise<void> {
 
     CREATE INDEX IF NOT EXISTS idx_agent_fills_session_date ON agent_fills (session_date);
   `)
+
+  await pool.query(`
+    ALTER TABLE agent_trades ALTER COLUMN parent_order_id TYPE TEXT USING parent_order_id::TEXT;
+    ALTER TABLE agent_trades ALTER COLUMN stop_order_id TYPE TEXT USING stop_order_id::TEXT;
+    ALTER TABLE agent_trades ALTER COLUMN take_profit_order_id TYPE TEXT USING take_profit_order_id::TEXT;
+  `).catch(() => {
+    /* columns may already be TEXT on fresh installs — extend CREATE if needed */
+  })
 }

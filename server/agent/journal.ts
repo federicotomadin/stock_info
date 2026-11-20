@@ -1,4 +1,5 @@
 import { isDatabaseEnabled, getPool } from '../db/pool.js'
+import type { BrokerOrderId } from '../broker/types.js'
 
 export type AgentDecisionKind =
   | 'skip'
@@ -30,9 +31,9 @@ export interface AgentTrade {
   stopLoss: number
   takeProfit: number
   originalStop: number
-  parentOrderId: number | null
-  stopOrderId: number | null
-  takeProfitOrderId: number | null
+  parentOrderId: BrokerOrderId | null
+  stopOrderId: BrokerOrderId | null
+  takeProfitOrderId: BrokerOrderId | null
   reason: string | null
   openedAt: string
 }
@@ -135,9 +136,9 @@ export async function recordTrade(input: {
   entryPrice: number
   stopLoss: number
   takeProfit: number
-  parentOrderId: number
-  stopOrderId: number
-  takeProfitOrderId: number
+  parentOrderId: BrokerOrderId
+  stopOrderId: BrokerOrderId
+  takeProfitOrderId: BrokerOrderId
   reason: string
 }): Promise<AgentTrade> {
   const row = await tryQuery(async () => {
@@ -196,7 +197,11 @@ export async function findOpenTrade(symbol: string): Promise<AgentTrade | null> 
   return trades.find((trade) => trade.symbol.toUpperCase() === symbol.toUpperCase()) ?? null
 }
 
-export async function updateTradeStop(id: number, stopLoss: number, stopOrderId: number | null): Promise<void> {
+export async function updateTradeStop(
+  id: number,
+  stopLoss: number,
+  stopOrderId: BrokerOrderId | null
+): Promise<void> {
   const memory = memoryTrades.find((trade) => trade.id === id)
   if (memory) {
     memory.stopLoss = stopLoss
@@ -292,6 +297,12 @@ export async function countPlacedToday(): Promise<number> {
   }, memoryTrades.filter((trade) => trade.openedAt.slice(0, 10) === new Date().toISOString().slice(0, 10)).length)
 }
 
+function parseOrderId(value: unknown): BrokerOrderId | null {
+  if (value == null || value === '') return null
+  const raw = String(value)
+  return /^\d+$/.test(raw) ? Number(raw) : raw
+}
+
 function mapTrade(row: Record<string, unknown>): AgentTrade {
   return {
     id: Number(row.id),
@@ -302,9 +313,9 @@ function mapTrade(row: Record<string, unknown>): AgentTrade {
     stopLoss: Number(row.stop_loss),
     takeProfit: Number(row.take_profit),
     originalStop: Number(row.original_stop),
-    parentOrderId: row.parent_order_id == null ? null : Number(row.parent_order_id),
-    stopOrderId: row.stop_order_id == null ? null : Number(row.stop_order_id),
-    takeProfitOrderId: row.take_profit_order_id == null ? null : Number(row.take_profit_order_id),
+    parentOrderId: parseOrderId(row.parent_order_id),
+    stopOrderId: parseOrderId(row.stop_order_id),
+    takeProfitOrderId: parseOrderId(row.take_profit_order_id),
     reason: row.reason == null ? null : String(row.reason),
     openedAt: new Date(String(row.opened_at)).toISOString(),
   }

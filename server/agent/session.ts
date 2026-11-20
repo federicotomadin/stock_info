@@ -1,5 +1,5 @@
 import { getPool, isDatabaseEnabled } from '../db/pool.js'
-import type { ExecutionFill } from '../broker/ibkr.js'
+import type { ExecutionFill } from '../broker/types.js'
 
 export interface SessionDay {
   day: string

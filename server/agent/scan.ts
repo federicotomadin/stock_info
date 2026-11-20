@@ -6,7 +6,7 @@ import { fetchTechnicalContext } from '../lib/supports.js'
 import { fetchMarketCaps } from '../providers/nasdaqScreener.js'
 import { ORDER_LIMITS } from '../broker/config.js'
 import { buildBracketProposal, type BracketProposal } from '../broker/proposal.js'
-import { toTickerSymbol } from '../broker/ibkr.js'
+import { toTickerSymbol } from '../broker/symbols.js'
 import { AGENT_CONFIG } from './config.js'
 import { rankScoreWithDiscipline } from './buffettGuard.js'
 
