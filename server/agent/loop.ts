@@ -28,6 +28,7 @@ import {
 import { manageOpenPositions } from './manage.js'
 import { isAfterNyCashClose, isUsEquitySession, nyCalendarDate, nyWeekStart } from './marketHours.js'
 import { sendDailySessionReport } from './report.js'
+import { minSlotUsd, rotateUndersizedTrades } from './rotate.js'
 import { findEntryCandidates } from './scan.js'
 import { getSessionDay, touchSessionDay, upsertFills } from './session.js'
 import { vetoEntry } from './veto.js'
@@ -78,7 +79,12 @@ function heldSymbols(
   return held
 }
 
-async function maybeEnter(snapshot: AccountSnapshot, held: Set<string>, runId: number): Promise<string | null> {
+async function maybeEnter(
+  snapshot: AccountSnapshot,
+  held: Set<string>,
+  runId: number,
+  openSlots: number
+): Promise<string | null> {
   const candidates = await findEntryCandidates(held)
   const rejected = candidates.filter((candidate) => candidate.rejected).slice(0, 5)
   if (rejected.length) {
@@ -126,6 +132,10 @@ async function maybeEnter(snapshot: AccountSnapshot, held: Set<string>, runId: n
       cashUsd: snapshot.cash ?? ORDER_LIMITS.maxOrderUsd,
       riskPct: AGENT_CONFIG.riskPct,
       maxOrderUsd: ORDER_LIMITS.maxOrderUsd,
+      sizingMode: AGENT_CONFIG.sizingMode,
+      cashDeployPct: AGENT_CONFIG.cashDeployPct,
+      openSlots,
+      minNotionalUsd: minSlotUsd(snapshot.netLiquidation ?? 0, AGENT_CONFIG.maxPositions, AGENT_CONFIG.minSlotFillPct),
     })
     if ('error' in sized) {
       await logDecision(runId, 'reject', sized.error, candidate.symbol)
@@ -243,6 +253,25 @@ export async function runAgentCycle(opts: { ignoreHours?: boolean } = {}): Promi
     const orders = await getOpenOrders()
     await manageOpenPositions(positions, orders, (kind, detail, symbol) => logDecision(runId, kind, detail, symbol))
 
+    const minSlot =
+      AGENT_CONFIG.sizingMode === 'cash'
+        ? minSlotUsd(snapshot.netLiquidation ?? 0, AGENT_CONFIG.maxPositions, AGENT_CONFIG.minSlotFillPct)
+        : 0
+    if (minSlot > 0) {
+      const rotated = await rotateUndersizedTrades({
+        trades: await listOpenTrades(),
+        positions: await getPositions(),
+        orders: await getOpenOrders(),
+        minUsd: minSlot,
+        log: (kind, detail, symbol) => logDecision(runId, kind, detail, symbol),
+      })
+      if (rotated.length) {
+        const summary = `Rotó ${rotated.join(', ')} (posiciones chicas). Compra con el cash liberado en el próximo ciclo.`
+        await logDecision(runId, 'scan', summary)
+        return finish('ok', summary)
+      }
+    }
+
     const afterPositions = await getPositions()
     const afterOrders = await getOpenOrders()
     const held = heldSymbols(afterPositions, afterOrders)
@@ -291,7 +320,8 @@ export async function runAgentCycle(opts: { ignoreHours?: boolean } = {}): Promi
       return finish('ok', summary)
     }
 
-    const bought = await maybeEnter(snapshot, held, runId)
+    const slotsForNewEntries = Math.max(1, AGENT_CONFIG.maxPositions - agentOpenTrades.length)
+    const bought = await maybeEnter(snapshot, held, runId, slotsForNewEntries)
     return finish('ok', bought && bought !== 'sin entradas' ? `Compró ${bought} y actualizó stops.` : 'Ciclo ok: se revisaron stops, sin compra nueva.')
   } catch (error) {
     const summary = error instanceof Error ? error.message : 'Error inesperado en el agente.'
@@ -359,6 +389,8 @@ export async function getAgentSnapshot(broker: BrokerStatus) {
     config: {
       maxPositions: AGENT_CONFIG.maxPositions,
       riskPct: AGENT_CONFIG.riskPct,
+      sizingMode: AGENT_CONFIG.sizingMode,
+      cashDeployPct: AGENT_CONFIG.cashDeployPct,
       maxOrderUsd: ORDER_LIMITS.maxOrderUsd,
       maxOrdersPerDay: ORDER_LIMITS.maxOrdersPerDay,
       aiVeto: AGENT_CONFIG.aiVeto,

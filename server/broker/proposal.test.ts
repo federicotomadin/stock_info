@@ -81,6 +81,41 @@ describe('sizeProposalByRisk', () => {
     expect(sized).toMatchObject({ ok: true, proposal: { quantity: 10, notionalUsd: 1000, riskUsd: 50 } })
   })
 
+  it('deploys cash across open slots in cash sizing mode', () => {
+    const built = buildBracketProposal(input({ price: 10 }), limits)
+    if (!built.ok) throw new Error('expected a proposal')
+
+    const sized = sizeProposalByRisk(built.proposal, {
+      equityUsd: 165,
+      cashUsd: 120,
+      riskPct: 1,
+      maxOrderUsd: 165,
+      sizingMode: 'cash',
+      cashDeployPct: 90,
+      openSlots: 2,
+    })
+
+    expect(sized).toMatchObject({ ok: true, proposal: { quantity: 5, notionalUsd: 50 } })
+  })
+
+  it('rejects cash-mode entries below the minimum per slot', () => {
+    const built = buildBracketProposal(input({ price: 30 }), limits)
+    if (!built.ok) throw new Error('expected a proposal')
+
+    const sized = sizeProposalByRisk(built.proposal, {
+      equityUsd: 150,
+      cashUsd: 150,
+      riskPct: 1,
+      maxOrderUsd: 165,
+      sizingMode: 'cash',
+      cashDeployPct: 90,
+      openSlots: 3,
+      minNotionalUsd: 31,
+    })
+
+    expect(sized.ok).toBe(false)
+  })
+
   it('rejects when cash cannot buy one share', () => {
     const built = buildBracketProposal(input(), limits)
     if (!built.ok) throw new Error('expected a proposal')

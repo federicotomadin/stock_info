@@ -131,6 +131,8 @@ async function sendEmail(to: string, html: string): Promise<void> {
 export interface SendWeeklyResult {
   sent: number
   failed: number
+  subscribers: number
+  lastError?: string
   top20: Array<{ symbol: string; name: string; trendLabel: string; yearChange: number | null }>
 }
 
@@ -145,6 +147,7 @@ export async function sendWeeklyDigest(): Promise<SendWeeklyResult> {
 
   let sent = 0
   let failed = 0
+  let lastError: string | undefined
 
   for (const subscriber of subscribers) {
     try {
@@ -154,7 +157,8 @@ export async function sendWeeklyDigest(): Promise<SendWeeklyResult> {
       sent += 1
     } catch (error) {
       failed += 1
-      console.error(`[newsletter] failed to send to ${subscriber.email}:`, error?.message ?? error)
+      lastError = error instanceof Error ? error.message : String(error)
+      console.error(`[newsletter] failed to send to ${subscriber.email}:`, lastError)
     }
   }
 
@@ -164,5 +168,12 @@ export async function sendWeeklyDigest(): Promise<SendWeeklyResult> {
     [sent, top20.map((s) => s.symbol).join(',')],
   )
 
-  return { sent, failed, top20 }
+  if (subscribers.length > 0 && sent === 0) {
+    throw new Error(
+      lastError ??
+        'No se pudo enviar a ningún suscriptor. Revisá RESEND_API_KEY y NEWSLETTER_FROM_EMAIL en Render.'
+    )
+  }
+
+  return { sent, failed, subscribers: subscribers.length, lastError, top20 }
 }

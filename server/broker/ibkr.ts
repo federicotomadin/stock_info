@@ -418,6 +418,29 @@ export async function placeProtectiveStop(params: {
   return orderId
 }
 
+export async function placeMarketSell(params: { symbol: string; quantity: number }): Promise<number> {
+  const account = await requireTradableAccount()
+  const client = getApi()
+  const orderId = await withTimeout(client.getNextValidOrderId(), 'order id').catch(() => {
+    resetConnection()
+    throw new Error('IB no devolvió un número de orden y se reinició la conexión.')
+  })
+  const sell: Order = {
+    account,
+    orderId,
+    action: OrderAction.SELL,
+    orderType: OrderType.MKT,
+    totalQuantity: params.quantity,
+    tif: TimeInForce.DAY,
+    transmit: true,
+    outsideRth: false,
+  }
+  client.placeOrder(orderId, stockContract(params.symbol), sell)
+  const reason = await waitForOrderRejection([orderId])
+  if (reason) throw new Error(`IB rechazó la venta: ${reason}`)
+  return orderId
+}
+
 /** Cancelling the parent entry also cancels its take-profit and stop-loss children. */
 export async function cancelOrder(orderId: number): Promise<void> {
   await requireTradableAccount()

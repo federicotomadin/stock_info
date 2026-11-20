@@ -9,6 +9,7 @@ export type AgentDecisionKind =
   | 'trail'
   | 'breakeven'
   | 'protect'
+  | 'rotate'
   | 'error'
 
 export interface AgentDecision {
@@ -206,6 +207,20 @@ export async function updateTradeStop(id: number, stopLoss: number, stopOrderId:
     await getPool().query(
       `UPDATE agent_trades SET stop_loss = $2, stop_order_id = COALESCE($3, stop_order_id), status = 'open' WHERE id = $1`,
       [id, stopLoss, stopOrderId]
+    )
+  } catch {
+    /* journal is best-effort */
+  }
+}
+
+export async function closeTrade(id: number, exitReason: string): Promise<void> {
+  const memory = memoryTrades.find((trade) => trade.id === id)
+  if (memory) memory.status = 'closed'
+  if (!isDatabaseEnabled()) return
+  try {
+    await getPool().query(
+      `UPDATE agent_trades SET status = 'closed', closed_at = NOW(), exit_reason = $2 WHERE id = $1`,
+      [id, exitReason]
     )
   } catch {
     /* journal is best-effort */

@@ -125,11 +125,24 @@ export function buildBracketProposal(
   }
 }
 
-/** Caps quantity by 1% (or configured) equity risk, cash, and the per-order notional cap. */
-export function sizeProposalByRisk(
-  proposal: BracketProposal,
-  opts: { equityUsd: number; cashUsd: number; riskPct: number; maxOrderUsd: number }
-): BracketProposalResult {
+export type AgentSizingMode = 'risk' | 'cash'
+
+export interface SizeProposalOptions {
+  equityUsd: number
+  cashUsd: number
+  riskPct: number
+  maxOrderUsd: number
+  /** risk = % equity at stop; cash = split available cash across open slots. */
+  sizingMode?: AgentSizingMode
+  /** In cash mode: fraction of (cash / openSlots) to deploy per entry (e.g. 90). */
+  cashDeployPct?: number
+  openSlots?: number
+  /** In cash mode: reject entries smaller than this, so a fresh buy is never rotated out next cycle. */
+  minNotionalUsd?: number
+}
+
+/** Caps quantity by risk %, cash deploy target, and per-order notional. */
+export function sizeProposalByRisk(proposal: BracketProposal, opts: SizeProposalOptions): BracketProposalResult {
   const perShareRisk = proposal.entryPrice - proposal.stopLoss
   if (!(perShareRisk > 0)) {
     return { ok: false, error: 'El stop quedó al mismo precio que la entrada.' }
@@ -138,14 +151,41 @@ export function sizeProposalByRisk(
     return { ok: false, error: 'No se pudo leer el equity de la cuenta IB.' }
   }
 
-  const riskBudget = opts.equityUsd * (opts.riskPct / 100)
-  const byRisk = Math.floor(riskBudget / perShareRisk)
   const byNotional = Math.floor(opts.maxOrderUsd / proposal.entryPrice)
   const byCash = Math.floor(Math.max(0, opts.cashUsd) / proposal.entryPrice)
-  const quantity = Math.min(byRisk, byNotional, byCash)
+
+  let quantity: number
+  if (opts.sizingMode === 'cash') {
+    const slots = Math.max(1, opts.openSlots ?? 1)
+    const deployPct = Math.min(100, Math.max(1, opts.cashDeployPct ?? 85))
+    const targetUsd = Math.min(
+      opts.maxOrderUsd,
+      (Math.max(0, opts.cashUsd) / slots) * (deployPct / 100)
+    )
+    const byDeploy = Math.floor(targetUsd / proposal.entryPrice)
+    quantity = Math.min(byDeploy, byCash, byNotional)
+  } else {
+    const riskBudget = opts.equityUsd * (opts.riskPct / 100)
+    const byRisk = Math.floor(riskBudget / perShareRisk)
+    quantity = Math.min(byRisk, byNotional, byCash)
+  }
 
   if (quantity < 1) {
-    return { ok: false, error: 'El presupuesto de riesgo no alcanza para una acción con este stop.' }
+    return {
+      ok: false,
+      error:
+        opts.sizingMode === 'cash'
+          ? 'El cash disponible no alcanza para una acción con el tope por orden.'
+          : 'El presupuesto de riesgo no alcanza para una acción con este stop.',
+    }
+  }
+
+  const notionalUsd = toCents(quantity * proposal.entryPrice)
+  if (opts.sizingMode === 'cash' && opts.minNotionalUsd && notionalUsd < opts.minNotionalUsd) {
+    return {
+      ok: false,
+      error: `La posición quedaría en US$${notionalUsd}, por debajo del mínimo por cupo (US$${toCents(opts.minNotionalUsd)}).`,
+    }
   }
 
   return {
@@ -153,7 +193,7 @@ export function sizeProposalByRisk(
     proposal: {
       ...proposal,
       quantity,
-      notionalUsd: toCents(quantity * proposal.entryPrice),
+      notionalUsd,
       riskUsd: toCents(quantity * perShareRisk),
     },
   }

@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 .env
 .cache/
+
+# Estado runtime del pack day-trader-skill (plan.json, state/, etc.)
+trader/

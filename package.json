@@ -15,6 +15,10 @@
     "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.server.json",
     "lint": "eslint .",
     "test": "vitest run",
+    "trader:config": "node scripts/sync-trader-config.mjs",
+    "trader:news": "tsx scripts/trader-news-cli.ts",
+    "trader:news:py": "node scripts/run-python-with-env.mjs tools/day-trader-skill/trader-news/news.py",
+    "trader:test": "python3 -m unittest discover -s tools/day-trader-skill/tests -v",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -1,4 +1,6 @@
 import 'dotenv/config'
+import type { AgentSizingMode } from '../broker/proposal.js'
+import { parseAgentSymbolList, parseSectorList } from './buffettGuard.js'
 
 const numberFromEnv = (name: string, fallback: number): number => {
   const value = Number(process.env[name])
@@ -13,11 +15,28 @@ export const AGENT_CONFIG = {
   maxPositions: numberFromEnv('AGENT_MAX_POSITIONS', 5),
   /** Percent of NetLiquidation risked on each new trade (the stop distance sets the share count). */
   riskPct: numberFromEnv('AGENT_RISK_PCT', 1),
+  sizingMode: (process.env.AGENT_SIZING === 'cash' ? 'cash' : 'risk') as AgentSizingMode,
+  cashDeployPct: numberFromEnv('AGENT_CASH_DEPLOY_PCT', 85),
+  /** Cash mode: positions costing less than this % of (equity / maxPositions) get sold to free the slot. */
+  minSlotFillPct: numberFromEnv('AGENT_MIN_SLOT_FILL_PCT', 60),
   scanLimit: numberFromEnv('AGENT_SCAN_LIMIT', 200),
   supportFetchLimit: numberFromEnv('AGENT_SUPPORT_FETCH_LIMIT', 8),
   maxNewTradesPerRun: 1,
   allowOutsideHours: process.env.AGENT_ALLOW_OUTSIDE_HOURS === 'true',
   aiVeto: process.env.AGENT_AI_VETO !== 'false',
+  /** Enriquece el veto IA con titulares recientes (tools/day-trader-skill/trader-news). */
+  newsVeto: process.env.AGENT_NEWS_VETO === 'true',
+  /** Fundamentales FMP/Finnhub en el veto (Buffett: ROE, deuda, margen). */
+  buffettFundamentals: process.env.AGENT_BUFFETT_FUNDAMENTALS !== 'false',
+  buffettHardRules: process.env.AGENT_BUFFETT_HARD_RULES !== 'false',
+  mrMarketDiscipline: process.env.AGENT_MR_MARKET_DISCIPLINE !== 'false',
+  buffettMinRoePct: numberFromEnv('AGENT_BUFFETT_MIN_ROE', 8),
+  buffettMaxDebtToEquity: numberFromEnv('AGENT_BUFFETT_MAX_DEBT_EQUITY', 2.5),
+  buffettMinNetMarginPct: numberFromEnv('AGENT_BUFFETT_MIN_NET_MARGIN', 0),
+  blockedTickers: parseAgentSymbolList(process.env.AGENT_BLOCKED_TICKERS),
+  blockedSectors: parseSectorList(process.env.AGENT_BLOCKED_SECTORS),
+  /** Si no está vacío, solo estos sectores (círculo de competencia). */
+  allowedSectors: parseSectorList(process.env.AGENT_ALLOWED_SECTORS),
   dailyProfitUsd: numberFromEnv('AGENT_DAILY_PROFIT_USD', 300),
   dailyLossUsd: numberFromEnv('AGENT_DAILY_LOSS_USD', 150),
   weeklyProfitUsd: numberFromEnv('AGENT_WEEKLY_PROFIT_USD', 50),

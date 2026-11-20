@@ -38,6 +38,8 @@ interface AgentStatus {
   config?: {
     maxPositions: number
     riskPct: number
+    sizingMode?: string
+    cashDeployPct?: number
     maxOrderUsd: number
     maxOrdersPerDay: number
     aiVeto: boolean
@@ -79,6 +81,7 @@ function kindLabel(kind: string): string {
   if (kind === 'trail') return 'Trailing'
   if (kind === 'breakeven') return 'Break-even'
   if (kind === 'protect') return 'Stop protector'
+  if (kind === 'rotate') return 'Rotación'
   if (kind === 'reject' || kind === 'skip') return 'Omitido'
   if (kind === 'error') return 'Error'
   return 'Scan'
@@ -175,7 +178,10 @@ export function AgentPanel() {
 
       {config ? (
         <p className="fundamentals-footnote">
-          Riesgo {config.riskPct}% del equity por trade · máx. US${config.maxOrderUsd} ·{' '}
+          {config.sizingMode === 'cash'
+            ? `Tamaño por cash (~${config.cashDeployPct ?? 85}% del efectivo / cupo libre)`
+            : `Riesgo ${config.riskPct}% del equity por trade`}{' '}
+          · máx. US${config.maxOrderUsd} ·{' '}
           {config.maxPositions} posiciones · {limits?.confirmedToday ?? 0}/{config.maxOrdersPerDay} órdenes hoy
           · ciclo cada {Math.round((status.intervalMs ?? 0) / 60000)} min
           {config.aiVeto ? ' · veto IA' : ''}. Meta día +US${config.dailyProfitUsd} / −US$

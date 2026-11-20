@@ -30,6 +30,22 @@ y configura `FINNHUB_API_KEY` con una key gratuita de [Finnhub](https://finnhub.
 - frontend Vite en `http://localhost:5173`
 - API local en `http://localhost:9001`
 
+## Day-trader-skill (complemento del agente)
+
+Incluye el pack [day-trader-skill](https://github.com/jakeschincariol/day-trader-skill) en
+`tools/day-trader-skill/` (Python 3.8+, solo stdlib). Sirve para noticias, scanner intradía,
+simulación (time machine) y chequeos de riesgo offline. La ejecución automática sigue siendo
+el agente IBKR en `server/agent/`.
+
+```bash
+node scripts/sync-trader-config.mjs   # alinea trader/config.json con AGENT_* / IBKR_*
+npm run trader:test                   # tests offline del pack
+```
+
+En Cursor, la skill `stock-info-day-trader` explica cuándo usar cada herramienta respecto
+de la meta semanal (`AGENT_WEEKLY_PROFIT_USD`). Opcional: `AGENT_NEWS_VETO=true` en `.env`
+para pasar titulares recientes al veto de IA antes de cada entrada.
+
 ## Notas
 
 - La API local construye el universo de acciones desde listados publicos de NASDAQ/NYSE y permite navegarlo con busqueda + paginacion.

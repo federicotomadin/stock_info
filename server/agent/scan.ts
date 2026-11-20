@@ -8,6 +8,7 @@ import { ORDER_LIMITS } from '../broker/config.js'
 import { buildBracketProposal, type BracketProposal } from '../broker/proposal.js'
 import { toTickerSymbol } from '../broker/ibkr.js'
 import { AGENT_CONFIG } from './config.js'
+import { rankScoreWithDiscipline } from './buffettGuard.js'
 
 const ENTRY_LABELS = new Set(['Early breakout', 'Pullback bounce', 'Momentum', 'Reversal'])
 
@@ -22,7 +23,21 @@ export function isEntryLabel(label: string): boolean {
   return ENTRY_LABELS.has(label)
 }
 
-export function rankScore(trendScore: number, trendLabel: string): number {
+export function rankScore(
+  trendScore: number,
+  trendLabel: string,
+  rsi14?: number | null,
+  monthChange?: number | null
+): number {
+  if (rsi14 !== undefined || monthChange !== undefined) {
+    return rankScoreWithDiscipline(
+      trendScore,
+      trendLabel,
+      rsi14,
+      monthChange,
+      AGENT_CONFIG.mrMarketDiscipline
+    )
+  }
   return trendScore + (LABEL_BOOST[trendLabel] ?? 0)
 }
 
@@ -81,7 +96,11 @@ export async function findEntryCandidates(held: Set<string>): Promise<RankedCand
       marketCap: resolveMarketCap(row.marketCap, nasdaqCaps.get(row.symbol)),
     }))
     .filter((row) => passesAgentUniverse(row, held))
-    .sort((a, b) => rankScore(b.trendScore, b.trendLabel) - rankScore(a.trendScore, a.trendLabel))
+    .sort(
+      (a, b) =>
+        rankScore(b.trendScore, b.trendLabel, b.rsi14, b.monthChange) -
+        rankScore(a.trendScore, a.trendLabel, a.rsi14, a.monthChange)
+    )
     .slice(0, AGENT_CONFIG.supportFetchLimit)
 
   const ranked: RankedCandidate[] = []
@@ -105,7 +124,7 @@ export async function findEntryCandidates(held: Set<string>): Promise<RankedCand
     ranked.push({
       symbol: row.symbol,
       name: row.name,
-      score: rankScore(row.trendScore, row.trendLabel),
+      score: rankScore(row.trendScore, row.trendLabel, row.rsi14, row.monthChange),
       trendLabel: row.trendLabel,
       ...('error' in built ? { rejected: built.error } : { proposal: built.proposal }),
     })
